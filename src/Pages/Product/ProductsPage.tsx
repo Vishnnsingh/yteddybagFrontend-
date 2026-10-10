@@ -8,6 +8,8 @@ import { usePublicProductsQuery, getCachedPublicProducts, productKeys } from '..
 import { useQueryClient } from '@tanstack/react-query';
 import { useHeaderNavigation } from '../../Context/HeaderNavigationContext';
 import ProductCard from '../../Components/ProductCard';
+import PageLoader from '../../Components/PageLoader';
+import apiClient from '../../Utils/apiClient';
 
 export function toTitleCase(str?: string | null): string {
   if (!str) return '';
@@ -42,14 +44,15 @@ export default function ProductsPage() {
 
   // TanStack Query Integration for reactive products fetching & caching
   const queryClient = useQueryClient();
-  const { data: queryProducts, isLoading: isQueryLoading, refetch } = usePublicProductsQuery();
+  const { data: queryProducts, isLoading: isQueryLoading } = usePublicProductsQuery();
 
-  // Reactive listener: when admin adds or updates a product, update instantaneously without page reload
+  // Reactive listener: Socket.io triggers selective background query reconciliation for active filters
+  const [, setCatalogVersion] = useState(0);
   useEffect(() => {
     const handleCatalogUpdate = () => {
-      queryClient.invalidateQueries({ queryKey: productKeys.all });
-      refetch();
-      dispatch(fetchPublicProducts());
+      setCatalogVersion((v) => v + 1);
+      // Selectively reconcile active query in background so filters/sorting stay 100% accurate
+      queryClient.invalidateQueries({ queryKey: productKeys.all, refetchType: 'active' });
     };
 
     window.addEventListener('product_catalog_updated', handleCatalogUpdate);
@@ -57,7 +60,7 @@ export default function ProductsPage() {
     return () => {
       window.removeEventListener('product_catalog_updated', handleCatalogUpdate);
     };
-  }, [queryClient, refetch, dispatch]);
+  }, [queryClient]);
 
   // Merge TanStack Query data with Redux products (prioritizing TanStack fresh cache)
   const products: ProductItem[] = useMemo(() => {
@@ -78,10 +81,9 @@ export default function ProductsPage() {
   const sortDropdownRef = useRef<HTMLDivElement>(null);
 
   const [searchTerm, setSearchTerm] = useState<string>(searchParams.get('search') || '');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedPriceRange, setSelectedPriceRange] = useState<string>('all');
   const [selectedDiscount, setSelectedDiscount] = useState<number | null>(null);
-  const [selectedRating, setSelectedRating] = useState<number | null>(null);
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
@@ -284,13 +286,17 @@ export default function ProductsPage() {
       );
     }
 
-    // 3. User Selected Category filter (from sidebar checkboxes)
-    if (selectedCategory) {
-      list = list.filter(
-        (p) =>
-          p.dropdown_title === selectedCategory ||
-          p.header_title === selectedCategory
-      );
+    // 3. User Selected Category filter (multi-select: user can select any combination)
+    if (selectedCategories.length > 0) {
+      const normCats = selectedCategories.map((c) => c.toLowerCase().trim());
+      list = list.filter((p) => {
+        const dTitle = p.dropdown_title?.toLowerCase().trim();
+        const hTitle = p.header_title?.toLowerCase().trim();
+        return (
+          (dTitle && normCats.includes(dTitle)) ||
+          (hTitle && normCats.includes(hTitle))
+        );
+      });
     }
 
     // 4. Price Range filter
@@ -311,12 +317,7 @@ export default function ProductsPage() {
       list = list.filter((p) => (p.discount_percent || 0) >= selectedDiscount);
     }
 
-    // 6. Rating filter
-    if (selectedRating !== null) {
-      list = list.filter((p) => (p.rating || 0) >= selectedRating);
-    }
-
-    // 7. Colors filter
+    // 6. Colors filter
     if (selectedColors.length > 0) {
       list = list.filter((p) =>
         p.colors?.some((c) =>
@@ -327,7 +328,7 @@ export default function ProductsPage() {
       );
     }
 
-    // 8. Sorting
+    // 7. Sorting
     if (sortOption === 'price_low') {
       list.sort((a, b) => a.price - b.price);
     } else if (sortOption === 'price_high') {
@@ -353,12 +354,51 @@ export default function ProductsPage() {
     dropdownSlug,
     categoryMeta,
     searchTerm,
-    selectedCategory,
+    selectedCategories,
     selectedPriceRange,
     selectedDiscount,
-    selectedRating,
     selectedColors,
     sortOption,
+  ]);
+
+  // Integrated Filter API: Sync criteria with backend /products/filter
+  useEffect(() => {
+    const controller = new AbortController();
+    const syncBackendFilter = async () => {
+      try {
+        const params: Record<string, string> = {};
+        if (selectedCategories.length > 0) params.categories = selectedCategories.join(',');
+        if (selectedPriceRange !== 'all') params.price_range = selectedPriceRange;
+        if (selectedDiscount !== null) params.discount = String(selectedDiscount);
+        if (selectedColors.length > 0) params.colors = selectedColors.join(',');
+        if (searchTerm.trim()) params.search = searchTerm.trim();
+        if (sortOption) params.sort = sortOption;
+        if (headerSlug) params.header_slug = headerSlug;
+        if (dropdownSlug) params.dropdown_slug = dropdownSlug;
+
+        await apiClient.get('/products/filter', {
+          params,
+          signal: controller.signal,
+        });
+      } catch (_) {
+        // Fallback to reactive local state
+      }
+    };
+
+    const timer = setTimeout(syncBackendFilter, 200);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [
+    selectedCategories,
+    selectedPriceRange,
+    selectedDiscount,
+    selectedColors,
+    searchTerm,
+    sortOption,
+    headerSlug,
+    dropdownSlug,
   ]);
 
   // Pagination State (50 cards per page = 10 rows of 5 cards)
@@ -369,10 +409,9 @@ export default function ProductsPage() {
   });
 
   const handleClearAllFilters = () => {
-    setSelectedCategory(null);
+    setSelectedCategories([]);
     setSelectedPriceRange('all');
     setSelectedDiscount(null);
-    setSelectedRating(null);
     setSelectedColors([]);
     setSearchTerm('');
     setSortOption('recommended');
@@ -384,10 +423,9 @@ export default function ProductsPage() {
     setCurrentPage(1);
   }, [
     searchTerm,
-    selectedCategory,
+    selectedCategories,
     selectedPriceRange,
     selectedDiscount,
-    selectedRating,
     selectedColors,
     sortOption,
     headerSlug,
@@ -395,12 +433,19 @@ export default function ProductsPage() {
   ]);
 
   const hasActiveFilters =
-    selectedCategory !== null ||
+    selectedCategories.length > 0 ||
     selectedPriceRange !== 'all' ||
     selectedDiscount !== null ||
-    selectedRating !== null ||
     selectedColors.length > 0 ||
     searchTerm.trim().length > 0;
+
+  const toggleCategoryFilter = (catName: string) => {
+    setSelectedCategories((prev) =>
+      prev.includes(catName)
+        ? prev.filter((c) => c !== catName)
+        : [...prev, catName]
+    );
+  };
 
   const toggleColorFilter = (colorName: string) => {
     setSelectedColors((prev) =>
@@ -427,6 +472,14 @@ export default function ProductsPage() {
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  if (loading && products.length === 0) {
+    return (
+      <div className="w-full min-h-[75vh] bg-white flex flex-col justify-center">
+        <PageLoader message="Loading handcrafted collections..." minHeight="min-h-[60vh]" />
+      </div>
+    );
+  }
 
   return (
     <div className="w-full min-h-screen bg-white text-[#282C3F]">
@@ -518,7 +571,7 @@ export default function ProductsPage() {
               </h4>
               <div className="space-y-2">
                 {availableCategories.map((cat) => {
-                  const isChecked = selectedCategory === cat;
+                  const isChecked = selectedCategories.includes(cat);
                   return (
                     <label
                       key={cat}
@@ -527,9 +580,7 @@ export default function ProductsPage() {
                       <input
                         type="checkbox"
                         checked={isChecked}
-                        onChange={() =>
-                          setSelectedCategory(isChecked ? null : cat)
-                        }
+                        onChange={() => toggleCategoryFilter(cat)}
                         className="w-4 h-4 rounded text-[#D26900] focus:ring-[#D26900] cursor-pointer"
                       />
                       <span className="group-hover:font-medium">
@@ -600,7 +651,7 @@ export default function ProductsPage() {
 
           {/* Filter 4: COLOR */}
           {availableColors.length > 0 && (
-            <div className="space-y-2.5 pb-4 border-b border-gray-100">
+            <div className="space-y-2.5 pb-2">
               <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-2.5">
                 Color
               </h4>
@@ -632,34 +683,6 @@ export default function ProductsPage() {
             </div>
           )}
 
-          {/* Filter 5: CUSTOMER RATING */}
-          <div className="space-y-2.5 pb-4">
-            <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-2.5">
-              Customer Rating
-            </h4>
-            <div className="space-y-2">
-              {[4, 3].map((r) => (
-                <label
-                  key={r}
-                  className="flex items-center gap-3 text-sm text-gray-800 hover:text-black cursor-pointer group py-0.5"
-                >
-                  <input
-                    type="radio"
-                    name="rating_filter"
-                    checked={selectedRating === r}
-                    onChange={() =>
-                      setSelectedRating(selectedRating === r ? null : r)
-                    }
-                    className="w-4 h-4 text-[#D26900] focus:ring-[#D26900] cursor-pointer"
-                  />
-                  <span className="group-hover:font-medium flex items-center gap-1">
-                    <span>{r}★ & above</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
-
           {/* Mobile Apply Button */}
           {mobileFilterOpen && (
             <div className="pt-4 lg:hidden">
@@ -683,17 +706,20 @@ export default function ProductsPage() {
             <div className="flex items-center justify-between gap-4 h-11 border-b border-[#EAEAEC] mb-5">
               {/* Active Filter Chips */}
               <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto py-0.5">
-                {selectedCategory && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-gray-100 text-gray-800 px-2.5 py-1 rounded-full border border-gray-200">
-                    {toTitleCase(selectedCategory)}
+                {selectedCategories.map((cat) => (
+                  <span
+                    key={cat}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold bg-gray-100 text-gray-800 px-2.5 py-1 rounded-full border border-gray-200"
+                  >
+                    {toTitleCase(cat)}
                     <button
-                      onClick={() => setSelectedCategory(null)}
+                      onClick={() => toggleCategoryFilter(cat)}
                       className="hover:text-red-500 ml-1 text-xs"
                     >
                       ✕
                     </button>
                   </span>
-                )}
+                ))}
               {selectedPriceRange !== 'all' && (
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-gray-100 text-gray-800 px-2.5 py-1 rounded-full border border-gray-200">
                   Price: {selectedPriceRange.replace('_', ' ')}
@@ -802,13 +828,8 @@ export default function ProductsPage() {
           </div>
 
           {/* Loading State */}
-          {loading && products.length === 0 && (
-            <div className="min-h-[50vh] flex flex-col items-center justify-center text-center">
-              <div className="w-10 h-10 border-4 border-[#D26900] border-t-transparent rounded-full animate-spin mb-3" />
-              <p className="text-xs font-semibold text-gray-600">
-                Loading handcrafted collections...
-              </p>
-            </div>
+          {loading && (
+            <PageLoader message="Updating collections..." minHeight="min-h-[40vh]" />
           )}
 
           {/* Empty State */}

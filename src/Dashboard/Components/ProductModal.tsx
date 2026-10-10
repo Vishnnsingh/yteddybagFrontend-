@@ -25,6 +25,15 @@ interface ProductModalProps {
   onSuccess?: () => void;
 }
 
+function getErrorMessage(err: any, fallback: string): string {
+  if (typeof err === 'string' && err.trim().length > 0) return err;
+  if (err?.response?.data?.message && typeof err.response.data.message === 'string') {
+    return err.response.data.message;
+  }
+  if (err?.message && typeof err.message === 'string') return err.message;
+  return fallback;
+}
+
 const PRESET_SPEC_KEYS = [
   'Material & Fabric',
   'Dimensions (H x W x D)',
@@ -164,8 +173,20 @@ export default function ProductModal({
       setStockQuantity(productToEdit.stock_quantity ?? '');
       setInStock(productToEdit.in_stock ?? true);
       setIsActive(productToEdit.is_active ?? true);
-      setColors(productToEdit.colors?.length ? [...productToEdit.colors] : []);
-      setSizes(productToEdit.sizes?.length ? [...productToEdit.sizes] : []);
+      setColors(
+        Array.isArray(productToEdit.colors)
+          ? productToEdit.colors.map((c: any) =>
+              typeof c === 'string'
+                ? { name: c, hex: '#D26900' }
+                : { name: String(c.name || ''), hex: String(c.hex || '#D26900') }
+            )
+          : []
+      );
+      setSizes(
+        Array.isArray(productToEdit.sizes)
+          ? productToEdit.sizes.map((s: any) => (typeof s === 'string' ? s : String(s?.size || s?.name || s)))
+          : []
+      );
       setTargetHeaderId(productToEdit.target_header_id || '');
       setTargetDropdownId(productToEdit.target_dropdown_id || '');
       setWhyLoveIt(
@@ -216,9 +237,10 @@ export default function ProductModal({
     setActiveTab('basic');
   }, [productToEdit, isOpen]);
 
-  // Find dropdown options based on targetHeaderId
-  const currentHeader = adminItems.find((h) => h.id === targetHeaderId);
-  const dropdownOptions = currentHeader?.dropdown_items || [];
+  // Find current header & dropdown for title & path metadata
+  const selectedHeader = adminItems.find((h) => h.id === targetHeaderId);
+  const dropdownOptions = selectedHeader?.dropdown_items || [];
+  const selectedDropdown = dropdownOptions.find((d) => d.id === targetDropdownId);
 
   // Color handlers
   const handleAddColor = () => {
@@ -295,7 +317,7 @@ export default function ProductModal({
         toast.success(`${res.length} photo(s) uploaded successfully!`);
       }
     } catch (err: any) {
-      toast.error(err || 'Failed to upload images');
+      toast.error(getErrorMessage(err, 'Failed to upload images'));
     }
     e.target.value = '';
   };
@@ -383,6 +405,10 @@ export default function ProductModal({
         sizes,
         target_header_id: targetHeaderId || null,
         target_dropdown_id: targetDropdownId || null,
+        header_title: selectedHeader?.title || null,
+        header_path: selectedHeader?.path || null,
+        dropdown_title: selectedDropdown?.title || null,
+        dropdown_path: selectedDropdown?.path || null,
         why_love_it: whyLoveIt.filter((p) => p.trim().length > 0),
         specifications: specifications
           .filter((s) => s.key.trim().length > 0 || s.value.trim().length > 0)
@@ -407,7 +433,7 @@ export default function ProductModal({
       onSuccess?.();
       onClose();
     } catch (err: any) {
-      toast.error(err || 'Failed to save product');
+      toast.error(getErrorMessage(err, 'Failed to save product'));
     } finally {
       setSubmitting(false);
     }
@@ -1582,10 +1608,10 @@ export default function ProductModal({
                       Hierarchical URL Routing Structure (Clean, No Random ID):
                     </span>
                     <code className="text-xs text-[#D26900] font-mono font-semibold bg-amber-50 px-2.5 py-1 rounded-lg inline-block">
-                      /{currentHeader?.title ? currentHeader.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') : ':header'}
+                      /{selectedHeader?.title ? selectedHeader.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') : ':header'}
                       /
-                      {dropdownOptions.find((d) => d.id === targetDropdownId)?.title
-                        ? dropdownOptions.find((d) => d.id === targetDropdownId)!.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+                      {selectedDropdown?.title
+                        ? selectedDropdown.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')
                         : ':subCategory'}
                       /{title ? title.toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'product-name'}
                     </code>

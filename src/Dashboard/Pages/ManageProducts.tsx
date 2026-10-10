@@ -15,6 +15,15 @@ import AdminCustomSelect from '../Components/AdminCustomSelect';
 import { queryClient } from '../../lib/queryClient';
 import { useHeaderNavigation } from '../../Context/HeaderNavigationContext';
 
+function getErrorMessage(err: any, fallback: string): string {
+  if (typeof err === 'string' && err.trim().length > 0) return err;
+  if (err?.response?.data?.message && typeof err.response.data.message === 'string') {
+    return err.response.data.message;
+  }
+  if (err?.message && typeof err.message === 'string') return err.message;
+  return fallback;
+}
+
 export default function ManageProducts() {
   const dispatch = useDispatch<AppDispatch>();
   const { adminProducts, adminLoading } = useSelector((state: RootState) => state.products);
@@ -129,7 +138,7 @@ export default function ManageProducts() {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       toast.success(`Updated status for "${currentTitle}"`);
     } catch (err: any) {
-      toast.error(err || 'Failed to update status');
+      toast.error(getErrorMessage(err, 'Failed to update status'));
     }
   };
 
@@ -142,7 +151,7 @@ export default function ManageProducts() {
       setDeleteModalState({ isOpen: false, product: null });
       setOpenActionDropdownId(null);
     } catch (err: any) {
-      toast.error(err || 'Failed to delete product');
+      toast.error(getErrorMessage(err, 'Failed to delete product'));
     }
   };
 

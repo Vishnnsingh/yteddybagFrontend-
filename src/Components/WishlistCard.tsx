@@ -71,6 +71,21 @@ export default function WishlistCard({ product }: WishlistCardProps) {
     toast.success(`"${product.title}" added to your Cart!`, { icon: '🛍️' });
   };
 
+  const isOutOfStock =
+    product.in_stock === false ||
+    (product.stock_quantity !== undefined && product.stock_quantity <= 0);
+
+  const handleShowSimilar = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const targetUrl =
+      product.dropdown_path ||
+      product.header_path ||
+      (product.header_title
+        ? `/category/${product.header_title.toLowerCase().replace(/\s+/g, '-')}`
+        : '/products');
+    navigate(targetUrl);
+  };
+
   return (
     <div
       onClick={handleCardClick}
@@ -91,7 +106,9 @@ export default function WishlistCard({ product }: WishlistCardProps) {
         <img
           src={primaryImg}
           alt={product.title}
-          className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500 ease-out"
+          className={`w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500 ease-out ${
+            isOutOfStock ? 'opacity-65 grayscale contrast-90' : ''
+          }`}
           loading="lazy"
           onError={(e) => {
             (e.target as HTMLImageElement).src =
@@ -99,8 +116,17 @@ export default function WishlistCard({ product }: WishlistCardProps) {
           }}
         />
 
-        {/* Badge */}
-        {product.badge_text && (
+        {/* Out of Stock Image Banner (Exact Image 2 Reference) */}
+        {isOutOfStock && (
+          <div className="absolute bottom-2.5 inset-x-0 flex justify-center z-10 pointer-events-none">
+            <span className="bg-white/95 text-[#E65100] border border-[#FFCCBC] px-3.5 py-1 rounded text-[11px] font-black tracking-wider uppercase shadow-xs">
+              OUT OF STOCK
+            </span>
+          </div>
+        )}
+
+        {/* Badge (Only if in stock) */}
+        {!isOutOfStock && product.badge_text && (
           <div className="absolute top-2.5 left-2.5 z-10">
             <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider text-white bg-[#D26900] rounded-sm shadow-2xs">
               {product.badge_text}
@@ -134,15 +160,37 @@ export default function WishlistCard({ product }: WishlistCardProps) {
           </div>
         </div>
 
-        {/* Action Button: MOVE TO CART */}
-        <button
-          type="button"
-          onClick={handleMoveToCart}
-          className="w-full py-2.5 bg-white border border-[#D26900] text-[#D26900] hover:bg-[#D26900] hover:text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
-        >
-          <span>🛍️</span>
-          <span>Move To Bag</span>
-        </button>
+        {/* Action Button: MOVE TO CART (or SHOW SIMILAR if out of stock, matching Image 2) */}
+        {isOutOfStock ? (
+          <button
+            type="button"
+            onClick={handleShowSimilar}
+            className="w-full py-2.5 bg-white border border-[#D26900] text-[#D26900] hover:bg-[#D26900] hover:text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <span>SHOW SIMILAR</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleMoveToCart}
+            className="group/btn w-full py-2.5 bg-white border border-[#D26900] text-[#D26900] hover:bg-[#D26900] hover:text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-colors shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <svg
+              className="w-4 h-4 text-[#D26900] group-hover/btn:text-white transition-colors shrink-0"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
+              />
+            </svg>
+            <span>ADD TO CART</span>
+          </button>
+        )}
       </div>
     </div>
   );

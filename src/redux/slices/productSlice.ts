@@ -57,8 +57,19 @@ export interface ProductItem {
 
 export interface ProductFilters {
   search?: string;
+  categories?: string[];
+  category?: string;
   header_id?: string;
   dropdown_id?: string;
+  header_slug?: string;
+  dropdown_slug?: string;
+  badge?: string;
+  price_range?: string;
+  min_price?: number;
+  max_price?: number;
+  discount?: number;
+  colors?: string[];
+  color?: string;
   sort?: string;
   page?: number;
   limit?: number;
@@ -104,24 +115,64 @@ const initialState: ProductState = {
 // ASYNC THUNKS
 // ==========================================
 
+// Helper to build query parameters for products and filters
+function buildProductFilterParams(filters: ProductFilters = {}): URLSearchParams {
+  const params = new URLSearchParams();
+  if (filters.search) params.append('search', filters.search);
+  if (filters.categories && filters.categories.length > 0) {
+    params.append('categories', filters.categories.join(','));
+  } else if (filters.category) {
+    params.append('category', filters.category);
+  }
+  if (filters.header_id) params.append('header_id', filters.header_id);
+  if (filters.dropdown_id) params.append('dropdown_id', filters.dropdown_id);
+  if (filters.header_slug) params.append('header_slug', filters.header_slug);
+  if (filters.dropdown_slug) params.append('dropdown_slug', filters.dropdown_slug);
+  if (filters.badge) params.append('badge', filters.badge);
+  if (filters.price_range && filters.price_range !== 'all') {
+    params.append('price_range', filters.price_range);
+  }
+  if (filters.min_price !== undefined) params.append('min_price', String(filters.min_price));
+  if (filters.max_price !== undefined) params.append('max_price', String(filters.max_price));
+  if (filters.discount !== undefined && filters.discount !== null) {
+    params.append('discount', String(filters.discount));
+  }
+  if (filters.colors && filters.colors.length > 0) {
+    params.append('colors', filters.colors.join(','));
+  } else if (filters.color) {
+    params.append('color', filters.color);
+  }
+  if (filters.sort) params.append('sort', filters.sort);
+  if (filters.page) params.append('page', String(filters.page));
+  if (filters.limit) params.append('limit', String(filters.limit));
+  return params;
+}
+
 // Public: Fetch products catalog dynamically from DB
 export const fetchPublicProducts = createAsyncThunk<any, ProductFilters | undefined>(
   'products/fetchPublic',
   async (filters: ProductFilters = {}, { rejectWithValue }) => {
     try {
-      const params = new URLSearchParams();
-      if (filters.search) params.append('search', filters.search);
-      if (filters.header_id) params.append('header_id', filters.header_id);
-      if (filters.dropdown_id) params.append('dropdown_id', filters.dropdown_id);
-      if (filters.sort) params.append('sort', filters.sort);
-      if (filters.page) params.append('page', String(filters.page));
-      if (filters.limit) params.append('limit', String(filters.limit));
-
+      const params = buildProductFilterParams(filters);
       const res = await apiClient.get(`/products?${params.toString()}`);
       const data = res.data?.data;
       return data;
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.message || 'Failed to fetch products');
+    }
+  }
+);
+
+// Public: Dedicated Filter API endpoint
+export const fetchFilteredProducts = createAsyncThunk<any, ProductFilters | undefined>(
+  'products/fetchFiltered',
+  async (filters: ProductFilters = {}, { rejectWithValue }) => {
+    try {
+      const params = buildProductFilterParams(filters);
+      const res = await apiClient.get(`/products/filter?${params.toString()}`);
+      return res.data?.data;
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.message || 'Failed to fetch filtered products');
     }
   }
 );
@@ -237,6 +288,48 @@ export const productSlice = createSlice({
     clearProductErrors: (state) => {
       state.error = null;
       state.adminError = null;
+    },
+    productCreatedFromSocket: (state, action: PayloadAction<ProductItem>) => {
+      const exists = state.products.some((p) => p.id === action.payload.id);
+      if (!exists && action.payload.is_active) {
+        state.products.unshift(action.payload);
+      }
+      const adminExists = state.adminProducts.some((p) => p.id === action.payload.id);
+      if (!adminExists) {
+        state.adminProducts.unshift(action.payload);
+      }
+    },
+    productUpdatedFromSocket: (state, action: PayloadAction<ProductItem>) => {
+      const updated = action.payload;
+      const idx = state.products.findIndex((p) => p.id === updated.id || p.slug === updated.slug);
+      if (idx !== -1) {
+        if (updated.is_active) {
+          state.products[idx] = updated;
+        } else {
+          state.products.splice(idx, 1);
+        }
+      } else if (updated.is_active) {
+        state.products.unshift(updated);
+      }
+
+      const aIdx = state.adminProducts.findIndex((p) => p.id === updated.id || p.slug === updated.slug);
+      if (aIdx !== -1) {
+        state.adminProducts[aIdx] = updated;
+      } else {
+        state.adminProducts.unshift(updated);
+      }
+
+      if (state.currentProduct && (state.currentProduct.id === updated.id || state.currentProduct.slug === updated.slug)) {
+        state.currentProduct = updated;
+      }
+    },
+    productDeletedFromSocket: (state, action: PayloadAction<string>) => {
+      const id = action.payload;
+      state.products = state.products.filter((p) => p.id !== id && p.slug !== id);
+      state.adminProducts = state.adminProducts.filter((p) => p.id !== id && p.slug !== id);
+      if (state.currentProduct && (state.currentProduct.id === id || state.currentProduct.slug === id)) {
+        state.currentProduct = null;
+      }
     },
   },
   extraReducers: (builder) => {
@@ -374,5 +467,11 @@ export const productSlice = createSlice({
   },
 });
 
-export const { clearCurrentProduct, clearProductErrors } = productSlice.actions;
+export const {
+  clearCurrentProduct,
+  clearProductErrors,
+  productCreatedFromSocket,
+  productUpdatedFromSocket,
+  productDeletedFromSocket,
+} = productSlice.actions;
 export default productSlice.reducer;

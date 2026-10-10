@@ -95,10 +95,10 @@ interface HeaderNavigationContextType {
   pagesLoading: boolean;
   bgTheme: BgThemeConfig | null;
   bgThemeLoading: boolean;
-  refreshHeaderItems: () => Promise<void>;
-  refreshAdminItems: () => Promise<void>;
+  refreshHeaderItems: (force?: boolean) => Promise<void>;
+  refreshAdminItems: (force?: boolean) => Promise<void>;
   refreshLoginBanner: () => Promise<void>;
-  refreshSitePages: () => Promise<void>;
+  refreshSitePages: (force?: boolean) => Promise<void>;
   refreshBgTheme: (force?: boolean) => Promise<BgThemeConfig | null>;
   createHeaderItem: (data: { title: string; path?: string; order_index?: number; image_url?: string | null }) => Promise<boolean>;
   updateHeaderItem: (id: string, data: Partial<HeaderItem>) => Promise<boolean>;
@@ -139,6 +139,14 @@ export const BG_THEME_STORAGE_KEY = 'yteddy_bg_theme_cache';
 export const BG_THEME_TIMESTAMP_KEY = 'yteddy_bg_theme_timestamp';
 export const BG_THEME_CACHE_DURATION = 60 * 60 * 1000; // 1 hour cache duration
 
+export const HEADER_NAV_STORAGE_KEY = 'yteddy_header_nav_cache';
+export const HEADER_NAV_TIMESTAMP_KEY = 'yteddy_header_nav_timestamp';
+export const ADMIN_NAV_STORAGE_KEY = 'yteddy_admin_nav_cache';
+export const ADMIN_NAV_TIMESTAMP_KEY = 'yteddy_admin_nav_timestamp';
+export const SITE_PAGES_STORAGE_KEY = 'yteddy_site_pages_cache';
+export const SITE_PAGES_TIMESTAMP_KEY = 'yteddy_site_pages_timestamp';
+export const HEADER_NAV_CACHE_DURATION = 30 * 60 * 1000; // 30 minutes cache duration
+
 let broadcastChannel: BroadcastChannel | null = null;
 if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
   try {
@@ -170,6 +178,72 @@ export const saveBgThemeToCache = (theme: BgThemeConfig) => {
   } catch (_) {}
 };
 
+// Helpers for localStorage navbar header items caching
+export const getHeaderItemsFromCache = (): HeaderItem[] | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const cached = localStorage.getItem(HEADER_NAV_STORAGE_KEY);
+    const ts = localStorage.getItem(HEADER_NAV_TIMESTAMP_KEY);
+    if (!cached || !ts) return null;
+    if (Date.now() - parseInt(ts, 10) > HEADER_NAV_CACHE_DURATION) return null;
+    const parsed = JSON.parse(cached);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  } catch (_) {}
+  return null;
+};
+
+export const saveHeaderItemsToCache = (items: HeaderItem[]) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(HEADER_NAV_STORAGE_KEY, JSON.stringify(items));
+    localStorage.setItem(HEADER_NAV_TIMESTAMP_KEY, Date.now().toString());
+  } catch (_) {}
+};
+
+// Helpers for localStorage admin header items caching
+export const getAdminItemsFromCache = (): HeaderItem[] | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const cached = localStorage.getItem(ADMIN_NAV_STORAGE_KEY);
+    const ts = localStorage.getItem(ADMIN_NAV_TIMESTAMP_KEY);
+    if (!cached || !ts) return null;
+    if (Date.now() - parseInt(ts, 10) > HEADER_NAV_CACHE_DURATION) return null;
+    const parsed = JSON.parse(cached);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  } catch (_) {}
+  return null;
+};
+
+export const saveAdminItemsToCache = (items: HeaderItem[]) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(ADMIN_NAV_STORAGE_KEY, JSON.stringify(items));
+    localStorage.setItem(ADMIN_NAV_TIMESTAMP_KEY, Date.now().toString());
+  } catch (_) {}
+};
+
+// Helpers for localStorage site pages caching
+export const getSitePagesFromCache = (): SitePagesMap | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const cached = localStorage.getItem(SITE_PAGES_STORAGE_KEY);
+    const ts = localStorage.getItem(SITE_PAGES_TIMESTAMP_KEY);
+    if (!cached || !ts) return null;
+    if (Date.now() - parseInt(ts, 10) > HEADER_NAV_CACHE_DURATION) return null;
+    const parsed = JSON.parse(cached);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (_) {}
+  return null;
+};
+
+export const saveSitePagesToCache = (pages: SitePagesMap) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(SITE_PAGES_STORAGE_KEY, JSON.stringify(pages));
+    localStorage.setItem(SITE_PAGES_TIMESTAMP_KEY, Date.now().toString());
+  } catch (_) {}
+};
+
 // Notify other open browser tabs instantly
 const notifyTabsHeaderUpdated = (newTheme?: BgThemeConfig) => {
   try {
@@ -190,9 +264,15 @@ const notifyTabsHeaderUpdated = (newTheme?: BgThemeConfig) => {
 const HeaderNavigationContext = createContext<HeaderNavigationContextType | undefined>(undefined);
 
 export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [headerItems, setHeaderItems] = useState<HeaderItem[]>([]);
+  const [headerItems, setHeaderItems] = useState<HeaderItem[]>(() => {
+    const cached = getHeaderItemsFromCache();
+    return cached || [];
+  });
   const [loading, setLoading] = useState(false);
-  const [adminItems, setAdminItems] = useState<HeaderItem[]>([]);
+  const [adminItems, setAdminItems] = useState<HeaderItem[]>(() => {
+    const cached = getAdminItemsFromCache();
+    return cached || [];
+  });
   const [adminLoading, setAdminLoading] = useState(false);
 
   const [loginBanner, setLoginBanner] = useState<LoginBannerConfig | null>({
@@ -208,7 +288,7 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
   });
   const [bannerLoading, setBannerLoading] = useState(false);
 
-  const [sitePages, setSitePages] = useState<SitePagesMap>({
+  const defaultSitePages: SitePagesMap = {
     'terms-of-use': {
       slug: 'terms-of-use',
       title: 'Terms of Use',
@@ -227,6 +307,12 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
       description: `Need assistance with an order, bag sizing, returns, or tracking? The YTeddybags Support Team is here to help you 24/7!\n\n1. Track Your Order: Check the status of your shipment anytime by navigating to your Account Orders or contacting our support desk.\n2. Returns & Exchanges: We offer hassle-free 7-day returns for defective or damaged items. Ensure products are in original condition with tags attached.\n3. Contact Information:\n• Email: support@yteddybags.com\n• Helpline: +91 98765 43210 (Mon-Sat, 9:00 AM - 7:00 PM IST)\n• WhatsApp Assistance: Available for instant chat & order status\n4. Frequently Asked Questions:\n• How long does delivery take? Standard shipping takes 3-5 business days across India.\n• What payment methods are accepted? We accept UPI, Credit/Debit cards, Net Banking, and Cash on Delivery.\n\nFeel free to write to us or message our team anytime!`,
       updated_at: new Date().toISOString(),
     },
+  };
+
+  const [sitePages, setSitePages] = useState<SitePagesMap>(() => {
+    const cached = getSitePagesFromCache();
+    if (cached) return { ...defaultSitePages, ...cached };
+    return defaultSitePages;
   });
   const [pagesLoading, setPagesLoading] = useState(false);
 
@@ -234,22 +320,36 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
   const isAdminFetchingRef = React.useRef(false);
   const lastFetchRef = React.useRef(0);
   const isBannerFetchingRef = React.useRef(false);
+  const isPagesFetchingRef = React.useRef(false);
 
-  // Fetch Public Pages (Terms of Use, Privacy Policy, Get Help)
-  const refreshSitePages = useCallback(async () => {
+  // Fetch Public Pages (Terms of Use, Privacy Policy, Get Help) with localStorage cache
+  const refreshSitePages = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getSitePagesFromCache();
+      if (cached) {
+        return;
+      }
+    }
+    if (isPagesFetchingRef.current) return;
     try {
+      isPagesFetchingRef.current = true;
       setPagesLoading(true);
       const res = await apiClient.get('/header-nav/pages');
       if (res.data?.success && res.data?.data) {
-        setSitePages((prev) => ({
-          ...prev,
-          ...res.data.data,
-        }));
+        setSitePages((prev) => {
+          const updated = {
+            ...prev,
+            ...res.data.data,
+          };
+          saveSitePagesToCache(updated);
+          return updated;
+        });
       }
     } catch (e) {
       console.warn('Failed to load site pages:', e);
     } finally {
       setPagesLoading(false);
+      isPagesFetchingRef.current = false;
     }
   }, []);
 
@@ -343,8 +443,15 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
     return null;
   }, []);
 
-  // Fetch active header items for customer website
-  const refreshHeaderItems = useCallback(async () => {
+  // Fetch active header items for customer website with localStorage cache
+  const refreshHeaderItems = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getHeaderItemsFromCache();
+      if (cached && cached.length > 0) {
+        setHeaderItems((prev) => (prev.length === 0 ? cached : prev));
+        return;
+      }
+    }
     if (isFetchingRef.current) return;
     try {
       isFetchingRef.current = true;
@@ -357,6 +464,7 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
         : null;
       if (items !== null) {
         setHeaderItems(items);
+        saveHeaderItemsToCache(items);
       }
       lastFetchRef.current = Date.now();
     } catch (err) {
@@ -367,8 +475,15 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
     }
   }, []);
 
-  // Fetch all header items for Admin Dashboard
-  const refreshAdminItems = useCallback(async () => {
+  // Fetch all header items for Admin Dashboard with localStorage cache
+  const refreshAdminItems = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getAdminItemsFromCache();
+      if (cached && cached.length > 0) {
+        setAdminItems((prev) => (prev.length === 0 ? cached : prev));
+        return;
+      }
+    }
     if (isAdminFetchingRef.current) return;
     try {
       isAdminFetchingRef.current = true;
@@ -381,6 +496,7 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
         : null;
       if (items !== null) {
         setAdminItems(items);
+        saveAdminItemsToCache(items);
       }
     } catch (err) {
       console.error('Failed to load admin header items', err);
@@ -392,7 +508,7 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
 
   // Initial fetch for client header and background theme
   useEffect(() => {
-    refreshHeaderItems();
+    refreshHeaderItems(false);
     refreshBgTheme(false);
   }, [refreshHeaderItems, refreshBgTheme]);
 
@@ -400,9 +516,9 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
   useEffect(() => {
     const handleBroadcast = (event: MessageEvent) => {
       if (event.data?.type === 'HEADER_NAV_CHANGED') {
-        refreshHeaderItems();
-        refreshAdminItems();
-        refreshSitePages();
+        refreshHeaderItems(true);
+        refreshAdminItems(true);
+        refreshSitePages(true);
         if (event.data?.bgTheme) {
           setBgTheme(event.data.bgTheme);
           saveBgThemeToCache(event.data.bgTheme);
@@ -424,9 +540,9 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
     // Storage event for fallback cross-tab sync
     const handleStorage = (event: StorageEvent) => {
       if (event.key === STORAGE_SYNC_KEY || event.key === BG_THEME_STORAGE_KEY) {
-        refreshHeaderItems();
-        refreshAdminItems();
-        refreshSitePages();
+        refreshHeaderItems(true);
+        refreshAdminItems(true);
+        refreshSitePages(true);
         const cached = getBgThemeFromCache();
         if (cached) {
           setBgTheme(cached);
@@ -435,11 +551,17 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
     };
     window.addEventListener('storage', handleStorage);
 
-    // Auto-sync only when switching back to this tab (with 10-second debounce to prevent spam)
+    // Auto-sync only when switching back to this tab if cache has actually expired
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible' && Date.now() - lastFetchRef.current > 10000) {
-        refreshHeaderItems();
-        refreshAdminItems();
+      if (document.visibilityState === 'visible') {
+        const cachedNav = getHeaderItemsFromCache();
+        if (!cachedNav) {
+          refreshHeaderItems(false);
+        }
+        const cachedAdmin = getAdminItemsFromCache();
+        if (!cachedAdmin) {
+          refreshAdminItems(false);
+        }
       }
     };
     document.addEventListener('visibilitychange', handleVisibility);
@@ -459,7 +581,7 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
       const res = await adminApiClient.post('/header-nav/admin', data);
       if (res.data?.success) {
         toast.success(`Header item "${data.title}" added successfully!`);
-        await Promise.all([refreshAdminItems(), refreshHeaderItems()]);
+        await Promise.all([refreshAdminItems(true), refreshHeaderItems(true)]);
         notifyTabsHeaderUpdated();
         return true;
       }
@@ -476,7 +598,7 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
       const res = await adminApiClient.put(`/header-nav/admin/${id}`, data);
       if (res.data?.success) {
         toast.success('Header item updated!');
-        await Promise.all([refreshAdminItems(), refreshHeaderItems()]);
+        await Promise.all([refreshAdminItems(true), refreshHeaderItems(true)]);
         notifyTabsHeaderUpdated();
         return true;
       }
@@ -493,7 +615,7 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
       const res = await adminApiClient.delete(`/header-nav/admin/${id}`);
       if (res.data?.success) {
         toast.success('Header item deleted!');
-        await Promise.all([refreshAdminItems(), refreshHeaderItems()]);
+        await Promise.all([refreshAdminItems(true), refreshHeaderItems(true)]);
         notifyTabsHeaderUpdated();
         return true;
       }
@@ -526,7 +648,7 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
             ? `${count} dropdown items added successfully!`
             : `Dropdown item "${data.title || 'Item'}" added!`
         );
-        await Promise.all([refreshAdminItems(), refreshHeaderItems()]);
+        await Promise.all([refreshAdminItems(true), refreshHeaderItems(true)]);
         notifyTabsHeaderUpdated();
         return true;
       }
@@ -546,7 +668,7 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
       const res = await adminApiClient.put(`/header-nav/admin/sub-items/${subId}`, data);
       if (res.data?.success) {
         toast.success('Dropdown item updated!');
-        await Promise.all([refreshAdminItems(), refreshHeaderItems()]);
+        await Promise.all([refreshAdminItems(true), refreshHeaderItems(true)]);
         notifyTabsHeaderUpdated();
         return true;
       }
@@ -574,7 +696,7 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
       if (res.data?.success && res.data.data?.imageUrl) {
         toast.success('Dropdown image uploaded successfully!');
         if (subId) {
-          await Promise.all([refreshAdminItems(), refreshHeaderItems()]);
+          await Promise.all([refreshAdminItems(true), refreshHeaderItems(true)]);
           notifyTabsHeaderUpdated();
         }
         return { success: true, imageUrl: res.data.data.imageUrl };
@@ -603,7 +725,7 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
       if (res.data?.success && res.data.data?.imageUrl) {
         toast.success('Header category image uploaded successfully!');
         if (headerId) {
-          await Promise.all([refreshAdminItems(), refreshHeaderItems()]);
+          await Promise.all([refreshAdminItems(true), refreshHeaderItems(true)]);
           notifyTabsHeaderUpdated();
         }
         return { success: true, imageUrl: res.data.data.imageUrl };
@@ -621,7 +743,7 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
       const res = await adminApiClient.delete(`/header-nav/admin/sub-items/${subId}`);
       if (res.data?.success) {
         toast.success('Dropdown item deleted!');
-        await Promise.all([refreshAdminItems(), refreshHeaderItems()]);
+        await Promise.all([refreshAdminItems(true), refreshHeaderItems(true)]);
         notifyTabsHeaderUpdated();
         return true;
       }
@@ -712,12 +834,16 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
         toast.success(res.data.message || 'Page updated successfully!');
         const updated = res.data.data;
         if (updated) {
-          setSitePages((prev) => ({
-            ...prev,
-            [slug]: updated,
-          }));
+          setSitePages((prev) => {
+            const nextPages = {
+              ...prev,
+              [slug]: updated,
+            };
+            saveSitePagesToCache(nextPages);
+            return nextPages;
+          });
         } else {
-          await refreshSitePages();
+          await refreshSitePages(true);
         }
         notifyTabsHeaderUpdated();
         return true;

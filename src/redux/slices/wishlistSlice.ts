@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 import apiClient from '../../Utils/apiClient';
 import type { ProductItem } from './productSlice';
+import { logoutUser, logoutUserAPI } from './authSlice';
 
 // Helper to retrieve or initialize persistent guest ID
 export function getOrCreateGuestId(): string {
@@ -130,6 +131,22 @@ export const wishlistSlice = createSlice({
       state.itemIds = [];
       saveCachedWishlist([]);
     },
+    productUpdatedInWishlist: (state, action: PayloadAction<ProductItem>) => {
+      const updated = action.payload;
+      const idx = state.items.findIndex(
+        (p) => p.id === updated.id || (p.slug && p.slug === updated.slug)
+      );
+      if (idx !== -1) {
+        state.items[idx] = updated;
+        saveCachedWishlist(state.items);
+      }
+    },
+    productDeletedFromWishlist: (state, action: PayloadAction<string>) => {
+      const id = action.payload;
+      state.items = state.items.filter((p) => p.id !== id && p.slug !== id);
+      state.itemIds = state.itemIds.filter((itemId) => itemId !== id);
+      saveCachedWishlist(state.items);
+    },
   },
   extraReducers: (builder) => {
     // fetchWishlist
@@ -185,8 +202,30 @@ export const wishlistSlice = createSlice({
         state.itemIds = action.payload.map((p) => p.id);
       }
     );
+
+    // Clear wishlist when user logs out (prevents local persistence leak across users)
+    builder.addCase(logoutUser, (state) => {
+      state.items = [];
+      state.itemIds = [];
+      saveCachedWishlist([]);
+      try {
+        localStorage.removeItem('yteddy_guest_id');
+      } catch {}
+    });
+    builder.addCase(logoutUserAPI.fulfilled, (state) => {
+      state.items = [];
+      state.itemIds = [];
+      saveCachedWishlist([]);
+      try {
+        localStorage.removeItem('yteddy_guest_id');
+      } catch {}
+    });
   },
 });
 
-export const { clearWishlist } = wishlistSlice.actions;
+export const {
+  clearWishlist,
+  productUpdatedInWishlist,
+  productDeletedFromWishlist,
+} = wishlistSlice.actions;
 export default wishlistSlice.reducer;

@@ -222,6 +222,10 @@ export default function ProductCard({ product, className = '' }: ProductCardProp
     return `${parseFloat(m.toFixed(1))}M`;
   };
 
+  const isOutOfStock =
+    product.in_stock === false ||
+    (product.stock_quantity !== undefined && product.stock_quantity <= 0);
+
   return (
     <div
       onClick={handleCardClick}
@@ -236,7 +240,9 @@ export default function ProductCard({ product, className = '' }: ProductCardProp
         <img
           src={imagesList[activeImgIndex] || imagesList[0]}
           alt={product.title}
-          className="w-full h-full object-cover object-center group-hover:scale-102 transition-all duration-300"
+          className={`w-full h-full object-cover object-center group-hover:scale-102 transition-all duration-300 ${
+            isOutOfStock ? 'opacity-65 grayscale contrast-90' : ''
+          }`}
           loading="lazy"
           onError={(e) => {
             (e.target as HTMLImageElement).src =
@@ -244,8 +250,17 @@ export default function ProductCard({ product, className = '' }: ProductCardProp
           }}
         />
 
+        {/* OUT OF STOCK BADGE (Centered bottom on photo) */}
+        {isOutOfStock && (
+          <div className="absolute bottom-2 inset-x-0 flex justify-center z-20 pointer-events-none">
+            <span className="bg-white/95 text-[#E65100] border border-[#FFCCBC] px-2.5 py-0.5 rounded text-[10px] font-black tracking-wider uppercase shadow-xs">
+              OUT OF STOCK
+            </span>
+          </div>
+        )}
+
         {/* DYNAMIC BADGE (Admin custom style & color, defaults to website color theme) */}
-        {renderBadge()}
+        {!isOutOfStock && renderBadge()}
 
         {/* FLOATING RATING PILL AT BOTTOM LEFT (Formatted review count e.g. 1.22k, 88.9k) */}
         <div
