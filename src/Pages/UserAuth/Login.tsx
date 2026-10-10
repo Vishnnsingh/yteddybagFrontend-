@@ -106,7 +106,8 @@ export default function Login() {
     }
     setIsGoogleLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/google/url`);
+      const currentOrigin = encodeURIComponent(window.location.origin);
+      const response = await fetch(`${API_BASE_URL}/auth/google/url?origin=${currentOrigin}`);
       const data = await response.json();
       if (data.success && data.data.url) {
         window.location.href = data.data.url;
