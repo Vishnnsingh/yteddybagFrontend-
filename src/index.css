@@ -1,0 +1,125 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-primary: #D26900;
+  --color-brand-hover: #B45309;
+  --color-brand-light: #FFF7ED;
+  --color-brand-text: #111827;
+  --color-brand-muted: #6B7280;
+  --color-brand-border: #F3F4F6;
+  --color-brand-success: #10B981;
+  --color-brand-error: #EF4444;
+}
+
+:root {
+  --color-primary: #D26900;
+  --color-primary-hover: #B45309;
+  --color-primary-light: #FFF7ED;
+}
+
+/* Prevent root window scrollbar from covering or overlapping the header */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ======================================================== */
+/* Brand CTA Color (#D26900) Custom Scrollbars              */
+/* ======================================================== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D26900;
+  border-radius: 9999px;
+  transition: background-color 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #B45309;
+}
+
+/* Firefox custom scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #D26900 transparent;
+}
+
+/* Dashboard Dark Sidebar Scrollbar */
+aside nav::-webkit-scrollbar,
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+
+aside nav::-webkit-scrollbar-track,
+.sidebar-scrollbar::-webkit-scrollbar-track {
+  background: #111827;
+  border-radius: 9999px;
+}
+
+aside nav::-webkit-scrollbar-thumb,
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: #D26900;
+  border-radius: 9999px;
+}
+
+aside nav::-webkit-scrollbar-thumb:hover,
+.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #F97316;
+}
+
+aside nav,
+.sidebar-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #D26900 #111827;
+}
+
+/* Custom Modal / Dropdown CTA Scrollbar */
+.custom-cta-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-cta-scrollbar::-webkit-scrollbar-track {
+  background: #FFF7ED;
+  border-radius: 9999px;
+}
+
+.custom-cta-scrollbar::-webkit-scrollbar-thumb {
+  background: #D26900;
+  border-radius: 9999px;
+}
+
+.custom-cta-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #B45309;
+}
+
+.custom-cta-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #D26900 #FFF7ED;
+}
+
+/* ======================================================== */
+/* Hide Scrollbars utility for elements with .no-scrollbar */
+/* ======================================================== */
+.no-scrollbar {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0px !important;
+  height: 0px !important;
+  background: transparent !important;
+}
