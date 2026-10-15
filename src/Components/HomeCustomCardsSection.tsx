@@ -16,6 +16,7 @@ export interface HomeCustomCardsSectionProps {
   textPositionOverride?: string;
   bgModeOverride?: 'transparent' | 'color' | 'gradient';
   bgColorOverride?: string;
+  settingsOverride?: any;
   itemIds?: string[];
   customItems?: HomeCustomCardItem[];
 }
@@ -33,14 +34,20 @@ export default function HomeCustomCardsSection({
   textPositionOverride,
   bgModeOverride,
   bgColorOverride,
+  settingsOverride,
   itemIds,
   customItems,
 }: HomeCustomCardsSectionProps = {}) {
   const { customCards: allCustomCards, customCardsSettings, customCardsLoading } = useHomeBanner();
+
+  const secSettings = {
+    ...(customCardsSettings || {}),
+    ...(settingsOverride || {}),
+  };
+
   const customCards = (function() {
-    if (Array.isArray(customItems) && customItems.length > 0) {
-      const active = customItems.filter((c) => c.is_active !== false);
-      if (active.length > 0) return active;
+    if (Array.isArray(customItems)) {
+      return customItems.filter((c) => c.is_active !== false);
     }
     if (sectionId && sectionId !== 'custom_cards_1') {
       return [];
@@ -54,7 +61,7 @@ export default function HomeCustomCardsSection({
   const navigate = useNavigate();
 
   // If section is disabled or there are no active cards and not loading, render nothing
-  const isEnabled = customItems !== undefined ? true : (customCardsSettings.is_enabled !== false);
+  const isEnabled = customItems !== undefined ? true : (secSettings.is_enabled !== false);
   if (!isEnabled || (customCards.length === 0 && !customCardsLoading)) {
     return null;
   }
@@ -70,21 +77,21 @@ export default function HomeCustomCardsSection({
   };
 
   // Compute section background styling (Supports instance override)
-  const effectiveBgMode = bgModeOverride || customCardsSettings.section_bg_mode;
-  const effectiveBgColor = bgColorOverride || customCardsSettings.section_bg_color;
+  const effectiveBgMode = bgModeOverride || secSettings.section_bg_mode;
+  const effectiveBgColor = bgColorOverride || secSettings.section_bg_color;
   const getSectionBgStyle = (): React.CSSProperties => {
     if (effectiveBgMode === 'color') {
       return { backgroundColor: effectiveBgColor || '#FFFFFF' };
     }
     if (effectiveBgMode === 'gradient') {
-      return { background: customCardsSettings.section_gradient || 'linear-gradient(135deg, #FFF7ED 0%, #FFFFFF 100%)' };
+      return { background: secSettings.section_gradient || 'linear-gradient(135deg, #FFF7ED 0%, #FFFFFF 100%)' };
     }
     // 'transparent' uses home original background
     return {};
   };
 
   // Determine grid columns classes (Supports instance override)
-  const effectiveCols = cardsPerRowOverride ? Number(cardsPerRowOverride) : Number(customCardsSettings.cards_per_row || 5);
+  const effectiveCols = cardsPerRowOverride ? Number(cardsPerRowOverride) : Number(secSettings.cards_per_row || 5);
   const getGridColsClass = (): string => {
     switch (effectiveCols) {
       case 6:
@@ -101,7 +108,7 @@ export default function HomeCustomCardsSection({
   };
 
   // Determine aspect ratio class (Supports instance override)
-  const effectiveRatio = aspectRatioOverride || customCardsSettings.card_aspect_ratio || 'tall';
+  const effectiveRatio = aspectRatioOverride || secSettings.card_aspect_ratio || 'tall';
   const getAspectRatioClass = (): string => {
     switch (effectiveRatio) {
       case 'square':
@@ -115,8 +122,16 @@ export default function HomeCustomCardsSection({
     }
   };
 
-  const effectiveTitle = titleOverride !== undefined ? titleOverride : customCardsSettings.section_title;
-  const effectiveSubtitle = subtitleOverride !== undefined ? subtitleOverride : customCardsSettings.section_subtitle;
+  const effectiveTitle =
+    titleOverride !== undefined && titleOverride !== null
+      ? titleOverride
+      : (secSettings.section_title !== undefined
+          ? secSettings.section_title
+          : (sectionId === 'custom_cards_1' ? 'Gifts for Every Feeling' : ''));
+  const effectiveSubtitle =
+    subtitleOverride !== undefined && subtitleOverride !== null
+      ? subtitleOverride
+      : (secSettings.section_subtitle || '');
 
   return (
     <div
@@ -134,9 +149,9 @@ export default function HomeCustomCardsSection({
         {(effectiveTitle || effectiveSubtitle) && (
           <div
             className={`mb-6 sm:mb-8 md:mb-10 ${
-              customCardsSettings.title_align === 'center'
+              secSettings.title_align === 'center'
                 ? 'text-center'
-                : customCardsSettings.title_align === 'right'
+                : secSettings.title_align === 'right'
                 ? 'text-right'
                 : 'text-left'
             }`}
@@ -144,7 +159,7 @@ export default function HomeCustomCardsSection({
             {effectiveTitle && (
               <h2
                 className="text-xl sm:text-2xl md:text-3xl lg:text-[32px] font-bold tracking-tight"
-                style={{ color: customCardsSettings.title_color || '#111827' }}
+                style={{ color: secSettings.title_color || '#111827' }}
               >
                 {effectiveTitle}
               </h2>
@@ -152,7 +167,7 @@ export default function HomeCustomCardsSection({
             {effectiveSubtitle && (
               <p
                 className="mt-1.5 sm:mt-2 text-xs sm:text-sm md:text-base max-w-2xl font-normal leading-relaxed opacity-90 inline-block"
-                style={{ color: customCardsSettings.subtitle_color || '#6B7280' }}
+                style={{ color: secSettings.subtitle_color || '#6B7280' }}
               >
                 {effectiveSubtitle}
               </p>
@@ -164,25 +179,25 @@ export default function HomeCustomCardsSection({
         <div className={`grid ${getGridColsClass()} gap-3.5 sm:gap-5 md:gap-6 lg:gap-7`}>
           {customCards.map((card) => {
             // Effective values (card override or fallback to section default)
-            const effectiveRadius = card.card_radius ?? customCardsSettings.global_card_radius ?? 16;
+            const effectiveRadius = card.card_radius ?? secSettings.global_card_radius ?? 16;
             const effectiveBorderMode =
               borderModeOverride ||
               (card.border_mode && card.border_mode !== 'classic'
                 ? card.border_mode
-                : card.border_mode || customCardsSettings.global_border_mode || 'classic');
+                : card.border_mode || secSettings.global_border_mode || 'classic');
             const effectiveClassicStyle =
               classicBorderOverride ||
               card.classic_border_style ||
-              customCardsSettings.global_classic_border ||
+              secSettings.global_classic_border ||
               'victorian-ornate';
             const effectiveBorderColor =
-              card.border_color || customCardsSettings.global_border_color || '#D26900';
+              card.border_color || secSettings.global_border_color || '#D26900';
             const effectiveTextPosition =
               textPositionOverride ||
               card.text_position ||
-              customCardsSettings.global_text_position ||
+              secSettings.global_text_position ||
               'below';
-            const hoverEffect = customCardsSettings.card_hover_effect || 'none';
+            const hoverEffect = secSettings.card_hover_effect || 'none';
 
             // Modern frame border styles
             const isModernBorder = effectiveBorderMode === 'modern';
@@ -287,12 +302,12 @@ export default function HomeCustomCardsSection({
             const effectiveCardPadding =
               card.card_padding !== undefined && card.card_padding !== null
                 ? Number(card.card_padding)
-                : Number(customCardsSettings.card_padding ?? 8);
+                : Number(secSettings.card_padding ?? 8);
 
             const effectiveImagePadding =
               card.image_padding !== undefined && card.image_padding !== null
                 ? Number(card.image_padding)
-                : Number(customCardsSettings.image_padding ?? 0);
+                : Number(secSettings.image_padding ?? 0);
 
             const hasImage = Boolean(card.image_url && card.image_url.trim());
             const cardBgColor = card.bg_color && card.bg_color !== 'transparent' ? card.bg_color : '#FFFFFF';
@@ -369,7 +384,7 @@ export default function HomeCustomCardsSection({
                         styleId={effectiveClassicStyle}
                         color={effectiveBorderColor}
                         radius={innerFrameRadius}
-                        borderWidth={card.border_width || customCardsSettings.global_border_width || 1}
+                        borderWidth={card.border_width || secSettings.global_border_width || 1}
                       />
                     )}
 

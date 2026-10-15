@@ -210,15 +210,31 @@ const formatOrdinalDate = (d: Date) => {
 };
 
 const getDeliveryDateStr = (order: OrderRecord) => {
-    if (order.estimatedDeliveryDate) return order.estimatedDeliveryDate;
+    if (order.estimatedDeliveryDate) {
+        const parsed = new Date(order.estimatedDeliveryDate);
+        if (!isNaN(parsed.getTime())) {
+            return formatOrdinalDate(parsed);
+        }
+        return order.estimatedDeliveryDate;
+    }
     const baseDate = new Date(order.createdAt || Date.now());
     const d = new Date(baseDate);
     d.setDate(d.getDate() + 5);
     return formatOrdinalDate(d);
 };
 
+const getCancelledDateStr = (item: any, order: OrderRecord) => {
+    const raw = item?.cancelledAt || order?.cancelledAt || order?.updatedAt || order?.createdAt;
+    if (!raw) return 'Recently';
+    const parsed = new Date(raw);
+    if (isNaN(parsed.getTime())) return 'Recently';
+    return formatOrdinalDate(parsed);
+};
+
 const getOrderedDateStr = (order: OrderRecord) => {
-    const d = new Date(order.createdAt || Date.now());
+    const raw = order.createdAt || Date.now();
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return 'Recently';
     const day = d.getDate();
     const month = d.toLocaleString('en-IN', { month: 'short' });
     const year = d.getFullYear();
@@ -845,14 +861,37 @@ export default function Myaccount() {
             const itemTitle = targetItem?.title || `Order #${cancellingOrder.orderNumber}`;
             toast.success(`"${itemTitle}" has been cancelled.`);
 
-            setCancelledSuccessOrder(updated || {
+            const now = new Date().toISOString();
+            const cancelledRecord = updated || {
                 ...cancellingOrder,
                 orderStatus: (cancellingOrder.items.length <= 1 || cancellingItemIndex === null) ? 'Cancelled' : cancellingOrder.orderStatus,
                 cancellationReason: selectedCancelReason,
-            });
+                cancelledAt: now,
+                items: cancellingOrder.items.map((it, idx) =>
+                    cancellingItemIndex === null || idx === cancellingItemIndex
+                        ? {
+                              ...it,
+                              status: 'Cancelled',
+                              cancellationReason: selectedCancelReason,
+                              cancelledAt: now,
+                          }
+                        : it
+                ),
+            };
+
+            setCancelledSuccessOrder(cancelledRecord);
             setCancelledSuccessItem(targetItem || cancellingOrder.items[0]);
             setCancellingOrder(null);
             setCancellingItemIndex(null);
+
+            // Immediately reflect in Order Details view if open
+            if (viewingDetailOrder && (viewingDetailOrder.order.id === cancellingOrder.id || viewingDetailOrder.order.orderNumber === cancellingOrder.orderNumber)) {
+                setViewingDetailOrder({
+                    order: cancelledRecord,
+                    itemIndex: viewingDetailOrder.itemIndex,
+                });
+            }
+
             refetchCustomerOrders();
         } catch (err: any) {
             toast.error(err.response?.data?.message || 'Failed to cancel item');
@@ -2442,15 +2481,60 @@ export default function Myaccount() {
 
                                                 {/* Section 1: Hero Product Showcase (Matches Image 2) */}
                                                 <div className="bg-white border border-[#EAEAEC] rounded-2xl p-5 sm:p-6 text-center space-y-3.5 shadow-2xs">
-                                                    <div className="mx-auto w-36 h-36 sm:w-44 sm:h-44 rounded-2xl overflow-hidden bg-white border border-gray-100 flex items-center justify-center p-2 shadow-2xs">
+                                                    <div className="mx-auto w-36 h-36 sm:w-44 sm:h-44 rounded-2xl overflow-hidden bg-white border border-gray-100 flex items-center justify-center p-2 shadow-2xs relative">
                                                         {targetItem?.primaryImage ? (
                                                             <img
                                                                 src={targetItem.primaryImage}
                                                                 alt={targetItem.title}
-                                                                className="w-full h-full object-contain"
+                                                                className={`w-full h-full object-contain ${isCancelled ? 'grayscale-15 contrast-95' : ''}`}
                                                             />
                                                         ) : (
                                                             <span className="text-4xl">🧸</span>
+                                                        )}
+
+                                                        {/* Vintage Circular CANCELLED Rubber Stamp Overlay (Matches Image 2 Exactly) */}
+                                                        {isCancelled && (
+                                                            <div className="absolute -bottom-1 -right-1 sm:bottom-0 sm:right-0 pointer-events-none select-none z-10 drop-shadow-xs transform -rotate-12">
+                                                                <svg
+                                                                    viewBox="0 0 120 120"
+                                                                    className="w-20 h-20 sm:w-24 sm:h-24 text-gray-500/90"
+                                                                >
+                                                                    <defs>
+                                                                        <path id="stampCircleTop" d="M 22,60 A 38,38 0 1,1 98,60" fill="none" />
+                                                                        <path id="stampCircleBottom" d="M 98,60 A 38,38 0 1,1 22,60" fill="none" />
+                                                                    </defs>
+                                                                    {/* Outer dashed/stitched ring */}
+                                                                    <circle cx="60" cy="60" r="54" fill="none" stroke="currentColor" strokeWidth="2.5" strokeDasharray="4 3" />
+                                                                    {/* Inner solid ring */}
+                                                                    <circle cx="60" cy="60" r="47" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                                                                    {/* Inner dashed ring */}
+                                                                    <circle cx="60" cy="60" r="30" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="3 2" />
+                                                                    {/* Top curved text: CANCELLED */}
+                                                                    <text fill="currentColor" fontSize="13" fontWeight="900" letterSpacing="3">
+                                                                        <textPath href="#stampCircleTop" startOffset="50%" textAnchor="middle">
+                                                                            CANCELLED
+                                                                        </textPath>
+                                                                    </text>
+                                                                    {/* Bottom curved text: ★ CANCELLED ★ */}
+                                                                    <text fill="currentColor" fontSize="11" fontWeight="800" letterSpacing="2.5">
+                                                                        <textPath href="#stampCircleBottom" startOffset="50%" textAnchor="middle">
+                                                                            ★ CANCELLED ★
+                                                                        </textPath>
+                                                                    </text>
+                                                                    {/* Center Cross */}
+                                                                    <text
+                                                                        x="60"
+                                                                        y="61"
+                                                                        textAnchor="middle"
+                                                                        dominantBaseline="middle"
+                                                                        fill="currentColor"
+                                                                        fontSize="14"
+                                                                        fontWeight="bold"
+                                                                    >
+                                                                        ✕
+                                                                    </text>
+                                                                </svg>
+                                                            </div>
                                                         )}
                                                     </div>
 
@@ -2471,28 +2555,57 @@ export default function Myaccount() {
                                                     </div>
                                                 </div>
 
-                                                {/* Section 2: Delivery Status Card (Mint Green Card - Matches Image 2) */}
-                                                <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-4">
-                                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                                        <div className="space-y-0.5 text-left">
-                                                            <span className="text-xs text-gray-500 font-medium block">
-                                                                {isDelivered ? 'Delivered On' : 'Delivery On'}
-                                                            </span>
-                                                            <span className="text-base sm:text-lg font-black text-emerald-700 block">
-                                                                {getDeliveryDateStr(detailOrder)}
-                                                            </span>
-                                                            <span className="text-xs font-bold text-emerald-800 flex items-center gap-1.5 mt-0.5">
-                                                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                                                                {isDelivered
-                                                                    ? 'Delivered'
-                                                                    : isCancelled
-                                                                    ? 'Cancelled'
-                                                                    : 'Order Confirmed'}
-                                                            </span>
-                                                        </div>
+                                                {/* Section 2: Delivery / Cancellation Status Card */}
+                                                {isCancelled ? (
+                                                    /* CANCELLED STATUS CARD (Matches Image 2 Exactly - Clean #F5F5F6 Card with 📦 ✕ icon & NO Track button) */
+                                                    <div className="bg-[#F5F5F6] border border-gray-200/80 rounded-2xl p-4 sm:p-5 shadow-2xs">
+                                                        <div className="flex items-center justify-between gap-4">
+                                                            <div className="space-y-0.5 text-left">
+                                                                <span className="text-xs text-gray-500 font-medium block">
+                                                                    Cancelled On
+                                                                </span>
+                                                                <span className="text-base sm:text-lg font-black text-gray-900 block">
+                                                                    {getCancelledDateStr(targetItem, detailOrder)}
+                                                                </span>
+                                                                <span className="text-xs text-gray-500 block pt-0.5">
+                                                                    {targetItem?.cancellationReason || detailOrder.cancellationReason || 'As per your request'}
+                                                                </span>
+                                                            </div>
 
-                                                        {/* Horizontal Progress Track with Moving Truck 🚚 Icon */}
-                                                        {!isCancelled && (
+                                                            {/* Cardboard delivery box with circular ✕ cross badge (Matches Image 2) */}
+                                                            <div className="relative w-14 h-14 sm:w-16 sm:h-16 shrink-0 flex items-center justify-center">
+                                                                <svg viewBox="0 0 64 64" className="w-12 h-12 text-amber-700/85 drop-shadow-2xs">
+                                                                    <path d="M32 10 L52 20 L32 30 L12 20 Z" fill="#D4A373" stroke="#A77242" strokeWidth="1.5" />
+                                                                    <path d="M12 20 L32 30 L32 54 L12 44 Z" fill="#C58F5B" stroke="#A77242" strokeWidth="1.5" />
+                                                                    <path d="M52 20 L32 30 L32 54 L52 44 Z" fill="#B9834F" stroke="#A77242" strokeWidth="1.5" />
+                                                                    <path d="M26 13 L38 19 L38 27 L26 21 Z" fill="#EBD5BF" opacity="0.65" />
+                                                                    <path d="M32 30 L32 46" stroke="#8E5E32" strokeWidth="1.2" strokeDasharray="2 1" />
+                                                                </svg>
+                                                                <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-[#4B5563] border-2 border-white flex items-center justify-center text-white text-[10px] font-black shadow-xs">
+                                                                    ✕
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        {/* Absolutely NO Track Item button on cancelled order */}
+                                                    </div>
+                                                ) : (
+                                                    /* ACTIVE STATUS CARD (Mint Green with Live Truck Progress & Track / Cancel Item) */
+                                                    <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-4">
+                                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                                            <div className="space-y-0.5 text-left">
+                                                                <span className="text-xs text-gray-500 font-medium block">
+                                                                    {isDelivered ? 'Delivered On' : 'Delivery On'}
+                                                                </span>
+                                                                <span className="text-base sm:text-lg font-black text-emerald-700 block">
+                                                                    {getDeliveryDateStr(detailOrder)}
+                                                                </span>
+                                                                <span className="text-xs font-bold text-emerald-800 flex items-center gap-1.5 mt-0.5">
+                                                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                                                    {isDelivered ? 'Delivered' : 'Order Confirmed'}
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Horizontal Progress Track with Moving Truck 🚚 Icon */}
                                                             <div className="w-full sm:w-56 py-3">
                                                                 <div className="relative w-full h-1.5 bg-emerald-200/70 rounded-full flex items-center">
                                                                     <div
@@ -2520,112 +2633,114 @@ export default function Myaccount() {
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                        )}
-                                                    </div>
+                                                        </div>
 
-                                                    {/* Action Buttons: [ 📍 Track Item ] & [ ⊗ Cancel Item ] */}
-                                                    <div className="pt-3 border-t border-emerald-200/70 flex flex-wrap items-center gap-3">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setSelectedTrackOrder(detailOrder);
-                                                                setSelectedTrackItem(targetItem);
-                                                            }}
-                                                            className="flex-1 min-w-[120px] py-2.5 px-4 bg-white hover:bg-emerald-50/70 border border-emerald-300 text-gray-800 font-bold text-xs rounded-xl transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
-                                                        >
-                                                            <svg
-                                                                className="w-4 h-4 text-emerald-700"
-                                                                viewBox="0 0 24 24"
-                                                                fill="none"
-                                                                stroke="currentColor"
-                                                                strokeWidth={2}
-                                                            >
-                                                                <circle cx="12" cy="12" r="7" />
-                                                                <line x1="12" y1="2" x2="12" y2="5" />
-                                                                <line x1="12" y1="19" x2="12" y2="22" />
-                                                                <line x1="2" y1="12" x2="5" y2="12" />
-                                                                <line x1="19" y1="12" x2="22" y2="12" />
-                                                                <circle cx="12" cy="12" r="2" fill="currentColor" />
-                                                            </svg>
-                                                            <span>Track Item</span>
-                                                        </button>
-
-                                                        {canCancel && targetItem?.status !== 'Cancelled' && (
+                                                        {/* Action Buttons: [ 📍 Track Item ] & [ ⊗ Cancel Item ] */}
+                                                        <div className="pt-3 border-t border-emerald-200/70 flex flex-wrap items-center gap-3">
                                                             <button
                                                                 type="button"
-                                                                onClick={() =>
-                                                                    handleOpenCancelFlow(
-                                                                        detailOrder,
-                                                                        viewingDetailOrder.itemIndex
-                                                                    )
-                                                                }
-                                                                className="flex-1 min-w-[120px] py-2.5 px-4 bg-white hover:bg-red-50/70 border border-red-200 text-gray-800 hover:text-red-700 font-bold text-xs rounded-xl transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+                                                                onClick={() => {
+                                                                    setSelectedTrackOrder(detailOrder);
+                                                                    setSelectedTrackItem(targetItem);
+                                                                }}
+                                                                className="flex-1 min-w-[120px] py-2.5 px-4 bg-white hover:bg-emerald-50/70 border border-emerald-300 text-gray-800 font-bold text-xs rounded-xl transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
                                                             >
                                                                 <svg
-                                                                    className="w-4 h-4 text-red-500"
+                                                                    className="w-4 h-4 text-emerald-700"
                                                                     viewBox="0 0 24 24"
                                                                     fill="none"
                                                                     stroke="currentColor"
                                                                     strokeWidth={2}
                                                                 >
-                                                                    <circle cx="12" cy="12" r="9" />
-                                                                    <line x1="15" y1="9" x2="9" y2="15" />
-                                                                    <line x1="9" y1="9" x2="15" y2="15" />
+                                                                    <circle cx="12" cy="12" r="7" />
+                                                                    <line x1="12" y1="2" x2="12" y2="5" />
+                                                                    <line x1="12" y1="19" x2="12" y2="22" />
+                                                                    <line x1="2" y1="12" x2="5" y2="12" />
+                                                                    <line x1="19" y1="12" x2="22" y2="12" />
+                                                                    <circle cx="12" cy="12" r="2" fill="currentColor" />
                                                                 </svg>
-                                                                <span>Cancel Item</span>
+                                                                <span>Track Item</span>
                                                             </button>
-                                                        )}
-                                                    </div>
-                                                </div>
 
-                                                {/* Section: Delivery To (Matches Image 3) */}
-                                                <div className="bg-white border border-[#EAEAEC] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3">
-                                                    <div className="flex items-start justify-between gap-3">
-                                                        <div className="flex items-start gap-3 min-w-0">
-                                                            <div className="w-9 h-9 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center text-base shrink-0 font-bold">
-                                                                👤
-                                                            </div>
-                                                            <div className="min-w-0 space-y-2.5">
-                                                                <div>
-                                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                                                                        Delivery To
-                                                                    </span>
-                                                                    <h4 className="text-sm font-bold text-gray-900 capitalize truncate">
-                                                                        {detailOrder.shippingAddress.name}
-                                                                    </h4>
-                                                                </div>
-
-                                                                <div>
-                                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                                                                        Contact Details
-                                                                    </span>
-                                                                    <p className="text-xs font-medium text-gray-800">
-                                                                        {detailOrder.shippingAddress.phone ||
-                                                                            user?.phone ||
-                                                                            '-'}
-                                                                    </p>
-                                                                </div>
-
-                                                                <div>
-                                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                                                                        Delivery Address
-                                                                    </span>
-                                                                    <p className="text-xs text-gray-600 leading-relaxed">
-                                                                        {detailOrder.shippingAddress.address},{' '}
-                                                                        {detailOrder.shippingAddress.city},{' '}
-                                                                        {detailOrder.shippingAddress.state} -{' '}
-                                                                        {detailOrder.shippingAddress.pincode}
-                                                                    </p>
-                                                                </div>
-                                                            </div>
+                                                            {canCancel && targetItem?.status !== 'Cancelled' && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        handleOpenCancelFlow(
+                                                                            detailOrder,
+                                                                            viewingDetailOrder.itemIndex
+                                                                        )
+                                                                    }
+                                                                    className="flex-1 min-w-[120px] py-2.5 px-4 bg-white hover:bg-red-50/70 border border-red-200 text-gray-800 hover:text-red-700 font-bold text-xs rounded-xl transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+                                                                >
+                                                                    <svg
+                                                                        className="w-4 h-4 text-red-500"
+                                                                        viewBox="0 0 24 24"
+                                                                        fill="none"
+                                                                        stroke="currentColor"
+                                                                        strokeWidth={2}
+                                                                    >
+                                                                        <circle cx="12" cy="12" r="9" />
+                                                                        <line x1="15" y1="9" x2="9" y2="15" />
+                                                                        <line x1="9" y1="9" x2="15" y2="15" />
+                                                                    </svg>
+                                                                    <span>Cancel Item</span>
+                                                                </button>
+                                                            )}
                                                         </div>
+                                                    </div>
+                                                )}
 
-                                                        <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
-                                                            <svg
-                                                                className="w-5 h-5"
-                                                                viewBox="0 0 24 24"
-                                                                fill="none"
-                                                                stroke="currentColor"
+                                                {/* Section: Delivery To (Only shown for active orders - Matches Image 3 vs Image 1) */}
+                                                {!isCancelled && (
+                                                    <div className="bg-white border border-[#EAEAEC] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3">
+                                                        <div className="flex items-start justify-between gap-3">
+                                                            <div className="flex items-start gap-3 min-w-0">
+                                                                <div className="w-9 h-9 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center text-base shrink-0 font-bold">
+                                                                    👤
+                                                                </div>
+                                                                <div className="min-w-0 space-y-2.5">
+                                                                    <div>
+                                                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                                                                            Delivery To
+                                                                        </span>
+                                                                        <h4 className="text-sm font-bold text-gray-900 capitalize truncate">
+                                                                            {detailOrder.shippingAddress.name}
+                                                                        </h4>
+                                                                    </div>
+
+                                                                    <div>
+                                                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                                                                            Contact Details
+                                                                        </span>
+                                                                        <p className="text-xs font-medium text-gray-800">
+                                                                            {detailOrder.shippingAddress.mobile ||
+                                                                                detailOrder.customerPhone ||
+                                                                                user?.phone ||
+                                                                                '-'}
+                                                                        </p>
+                                                                    </div>
+
+                                                                    <div>
+                                                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                                                                            Delivery Address
+                                                                        </span>
+                                                                        <p className="text-xs text-gray-600 leading-relaxed">
+                                                                            {detailOrder.shippingAddress.address},{' '}
+                                                                            {detailOrder.shippingAddress.city},{' '}
+                                                                            {detailOrder.shippingAddress.state} -{' '}
+                                                                            {detailOrder.shippingAddress.pincode}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                                                                <svg
+                                                                    className="w-5 h-5"
+                                                                    viewBox="0 0 24 24"
+                                                                    fill="none"
+                                                                    stroke="currentColor"
                                                                 strokeWidth={2}
                                                             >
                                                                 <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" />
@@ -2634,6 +2749,7 @@ export default function Myaccount() {
                                                         </div>
                                                     </div>
                                                 </div>
+                                                )}
 
                                                 {/* Section 5: Pre pay for your order (Matches Image 3) */}
                                                 {isCodOrPending && !isDelivered && !isCancelled && (
@@ -2722,7 +2838,7 @@ export default function Myaccount() {
                                                                     ).toLocaleString('en-IN')}`
                                                                 );
                                                             }}
-                                                            className="text-xs font-semibold text-[#D26900] hover:underline cursor-pointer"
+                                                            className="text-xs font-medium text-gray-700 underline underline-offset-4 decoration-dashed hover:text-gray-900 cursor-pointer"
                                                         >
                                                             View Breakup
                                                         </button>
@@ -2747,7 +2863,7 @@ export default function Myaccount() {
                                                     <p className="text-xs text-gray-500">
                                                         Sold by:{' '}
                                                         <span className="font-semibold text-gray-700">
-                                                            YTeddybags Official Store
+                                                            {targetItem?.brand ? `${targetItem.brand} India` : 'YTeddybags India'}
                                                         </span>
                                                     </p>
 
@@ -2778,7 +2894,7 @@ export default function Myaccount() {
                                                             ✓
                                                         </span>
                                                         <span>
-                                                            {detailOrder.paymentStatus === 'Completed' ||
+                                                            {detailOrder.paymentStatus === 'Paid' ||
                                                             detailOrder.paymentMethod.toUpperCase() === 'UPI'
                                                                 ? 'Paid Online (UPI)'
                                                                 : 'Cash on delivery'}
@@ -2812,7 +2928,11 @@ export default function Myaccount() {
                                                                 Call
                                                             </span>
                                                             <p className="text-xs font-bold text-gray-800 mt-0.5">
-                                                                {detailOrder.shippingAddress.phone || user?.phone || '-'}
+                                                                {detailOrder.shippingAddress.phone ||
+                                                                    detailOrder.shippingAddress.mobile ||
+                                                                    detailOrder.customerPhone ||
+                                                                    user?.phone ||
+                                                                    '-'}
                                                             </p>
                                                         </div>
                                                         <div>
@@ -2820,7 +2940,7 @@ export default function Myaccount() {
                                                                 Email
                                                             </span>
                                                             <p className="text-xs font-bold text-gray-800 mt-0.5 truncate">
-                                                                {user?.email || '-'}
+                                                                {detailOrder.customerEmail || (detailOrder.shippingAddress as any)?.email || user?.email || '-'}
                                                             </p>
                                                         </div>
                                                     </div>
@@ -3017,7 +3137,6 @@ export default function Myaccount() {
 
                                             const isOrderFullyCancelled = order.orderStatus === 'Cancelled' || activeItems.length === 0;
                                             const isDelivered = order.orderStatus === 'Delivered';
-                                            const isConfirmedOrPlaced = ['placed', 'confirmed'].includes(order.orderStatus.toLowerCase());
                                             const canCancel = ['Placed', 'Confirmed', 'Packed'].includes(order.orderStatus);
                                             const isCodOrPending =
                                                 order.paymentMethod?.toLowerCase().includes('cod') ||

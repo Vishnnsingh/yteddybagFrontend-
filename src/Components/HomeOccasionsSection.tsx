@@ -193,7 +193,7 @@ export default function HomeOccasionsSection({
                     /* Responsive sizing: compact on laptop (~240-270px), naturally expands on large screens (~310-340px) */
                     flex: '1 0 clamp(210px, 17.5vw, 340px)',
                     maxWidth: '350px',
-                    height: 'clamp(145px, 13.5vw, 190px)',
+                    height: 'clamp(152px, 14vw, 202px)',
                   }}
                 >
                   {/* Subtle inner soft gradient for depth */}
@@ -216,17 +216,39 @@ export default function HomeOccasionsSection({
                     </div>
                   </div>
 
-                  {/* Optional Card Image: positioned at bottom right/center */}
+                  {/* Optional Card Image: positioned and zoomed according to admin setting */}
                   {hasImage ? (
-                    <div className="absolute bottom-0 right-0 sm:right-1 md:right-2 h-[95px] sm:h-[110px] md:h-[125px] max-w-[70%] sm:max-w-[72%] flex items-end justify-end pointer-events-none z-0">
-                      <img
-                        src={item.image_url!}
-                        alt={item.title}
-                        className="max-h-full max-w-full object-contain drop-shadow-sm pointer-events-none"
-                        loading="lazy"
-                        onLoad={updateScrollButtons}
-                      />
-                    </div>
+                    (() => {
+                      const pos = item.image_position || 'bottom-right';
+                      const scaleRaw = Number(item.image_scale);
+                      const scale = !isNaN(scaleRaw) && scaleRaw > 0 ? (scaleRaw > 10 ? scaleRaw / 100 : scaleRaw) : 1.0;
+                      
+                      let posClass = 'bottom-0 right-0 sm:right-1 md:right-2 justify-end items-end';
+                      let origin = 'bottom right';
+                      if (pos === 'bottom-center') {
+                        posClass = 'bottom-0 left-1/2 -translate-x-1/2 justify-center items-end';
+                        origin = 'bottom center';
+                      } else if (pos === 'center-right') {
+                        posClass = 'top-1/2 -translate-y-1/2 right-1 sm:right-2 justify-end items-center';
+                        origin = 'center right';
+                      }
+
+                      return (
+                        <div className={`absolute ${posClass} h-[82%] sm:h-[86%] md:h-[90%] max-w-[65%] sm:max-w-[70%] flex pointer-events-none z-0 overflow-visible`}>
+                          <img
+                            src={item.image_url!}
+                            alt={item.title}
+                            style={{
+                              transform: `scale(${scale})`,
+                              transformOrigin: origin,
+                            }}
+                            className="max-h-full max-w-full object-contain drop-shadow-sm pointer-events-none transition-transform duration-200"
+                            loading="lazy"
+                            onLoad={updateScrollButtons}
+                          />
+                        </div>
+                      );
+                    })()
                   ) : (
                     /* Subtle decorative graphic when card has no image */
                     <div className="relative z-0 flex items-end justify-end text-black/10 select-none pointer-events-none self-end mt-auto">

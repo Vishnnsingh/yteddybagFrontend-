@@ -115,6 +115,8 @@ export interface HomeOccasionItem {
   title: string;
   date_badge?: string | null;
   image_url?: string | null;
+  image_scale?: number | null;
+  image_position?: string | null;
   bg_color: string;
   link_type: 'header' | 'dropdown';
   target_header_id?: string | null;

@@ -15,6 +15,7 @@ export type EcommercePaymentStatus = 'Pending' | 'Paid' | 'Failed' | 'Refunded';
 export interface OrderItemProduct {
   productId: string;
   title: string;
+  brand?: string;
   primaryImage?: string;
   price: number;
   mrp?: number;
@@ -30,6 +31,7 @@ export interface OrderItemProduct {
 export interface ShippingAddressSnapshot {
   name: string;
   mobile: string;
+  phone?: string;
   address: string;
   locality?: string;
   city: string;

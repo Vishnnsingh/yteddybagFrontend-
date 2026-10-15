@@ -279,13 +279,13 @@ export default function AdminCustomCardsTab({ targetSectionId, onJumpToLayout }:
 
   const effectiveCustomCards: HomeCustomCardItem[] = useMemo(() => {
     if (activeSection) {
-      if (activeSection.id !== 'custom_cards_1') {
-        return Array.isArray(activeSection.items) ? (activeSection.items as HomeCustomCardItem[]) : [];
-      }
       if (Array.isArray(activeSection.items)) {
         return activeSection.items as HomeCustomCardItem[];
       }
-      return adminCustomCards;
+      if (activeSection.id === 'custom_cards_1') {
+        return adminCustomCards;
+      }
+      return [];
     }
     return adminCustomCards;
   }, [activeSection, adminCustomCards]);
@@ -346,21 +346,41 @@ export default function AdminCustomCardsTab({ targetSectionId, onJumpToLayout }:
     if (activeSection) {
       const secSettings = activeSection.settings || {};
       setIsEnabled(activeSection.is_enabled !== false);
-      setSectionTitle(activeSection.section_title || secSettings.section_title || activeSection.custom_label || 'Gifts for Every Feeling');
-      setSectionSubtitle(activeSection.section_subtitle || secSettings.section_subtitle || '');
+      const resolvedTitle =
+        activeSection.section_title !== undefined && activeSection.section_title !== null && activeSection.section_title !== ''
+          ? activeSection.section_title
+          : secSettings.section_title !== undefined && secSettings.section_title !== null && secSettings.section_title !== ''
+          ? secSettings.section_title
+          : (activeSection.id === 'custom_cards_1' ? 'Gifts for Every Feeling' : (activeSection.custom_label || ''));
+      setSectionTitle(resolvedTitle);
+
+      const resolvedSubtitle =
+        activeSection.section_subtitle !== undefined && activeSection.section_subtitle !== null
+          ? activeSection.section_subtitle
+          : (secSettings.section_subtitle || '');
+      setSectionSubtitle(resolvedSubtitle);
+
       setTitleAlign(secSettings.title_align || 'left');
       setTitleColor(secSettings.title_color || '#111827');
       setSubtitleColor(secSettings.subtitle_color || '#6B7280');
       setSectionBgMode((activeSection.section_bg_mode as any) || secSettings.section_bg_mode || 'transparent');
       setSectionBgColor(activeSection.section_bg_color || secSettings.section_bg_color || '#FFFFFF');
+      setSectionGradient(secSettings.section_gradient || 'linear-gradient(135deg, #FFF7ED 0%, #FFFFFF 100%)');
       setCardsPerRow(Number(activeSection.cards_per_row || secSettings.cards_per_row || 5));
       setCardAspectRatio((activeSection.card_aspect_ratio as any) || secSettings.card_aspect_ratio || 'tall');
+      setGlobalCardRadius(secSettings.global_card_radius !== undefined ? Number(secSettings.global_card_radius) : 16);
       setGlobalBorderMode((activeSection.border_mode as any) || secSettings.global_border_mode || 'classic');
       setGlobalClassicBorder(activeSection.classic_border_style || secSettings.global_classic_border || 'victorian-ornate');
+      setGlobalBorderColor(secSettings.global_border_color || '#D26900');
+      setGlobalBorderWidth(secSettings.global_border_width !== undefined ? Number(secSettings.global_border_width) : 1);
       setGlobalTextPosition((activeSection.text_position as any) || secSettings.global_text_position || 'below');
+      setCardHoverEffect(secSettings.card_hover_effect || 'none');
+      setGlobalCardPadding(secSettings.card_padding !== undefined ? Number(secSettings.card_padding) : 8);
+      setGlobalImagePadding(secSettings.image_padding !== undefined ? Number(secSettings.image_padding) : 0);
+      setCardBgColor(secSettings.card_bg_color || '#FFFFFF');
     } else if (customCardsSettings) {
       setIsEnabled(customCardsSettings.is_enabled !== false);
-      setSectionTitle(customCardsSettings.section_title || '');
+      setSectionTitle(customCardsSettings.section_title || 'Gifts for Every Feeling');
       setSectionSubtitle(customCardsSettings.section_subtitle || '');
       setTitleAlign(customCardsSettings.title_align || 'left');
       setTitleColor(customCardsSettings.title_color || '#111827');
@@ -511,30 +531,57 @@ export default function AdminCustomCardsTab({ targetSectionId, onJumpToLayout }:
             card_bg_color: cardBgColor,
           },
         });
+        // ONLY sync to global customCardsSettings if there is strictly 1 section and it is the default section
+        if (customCardsSections.length === 1 && activeSection.id === 'custom_cards_1') {
+          await updateCustomCardsSettings({
+            is_enabled: isEnabled,
+            section_title: sectionTitle,
+            section_subtitle: sectionSubtitle,
+            title_align: titleAlign,
+            title_color: titleColor,
+            subtitle_color: subtitleColor,
+            section_bg_mode: sectionBgMode,
+            section_bg_color: sectionBgColor,
+            section_gradient: sectionGradient,
+            cards_per_row: Number(cardsPerRow),
+            card_aspect_ratio: cardAspectRatio,
+            global_card_radius: Number(globalCardRadius),
+            global_border_mode: globalBorderMode,
+            global_classic_border: globalClassicBorder,
+            global_border_color: globalBorderColor,
+            global_border_width: Number(globalBorderWidth),
+            global_text_position: globalTextPosition,
+            card_padding: Number(globalCardPadding),
+            image_padding: Number(globalImagePadding),
+            card_hover_effect: cardHoverEffect,
+            card_bg_color: cardBgColor,
+          });
+        }
+      } else {
+        await updateCustomCardsSettings({
+          is_enabled: isEnabled,
+          section_title: sectionTitle,
+          section_subtitle: sectionSubtitle,
+          title_align: titleAlign,
+          title_color: titleColor,
+          subtitle_color: subtitleColor,
+          section_bg_mode: sectionBgMode,
+          section_bg_color: sectionBgColor,
+          section_gradient: sectionGradient,
+          cards_per_row: Number(cardsPerRow),
+          card_aspect_ratio: cardAspectRatio,
+          global_card_radius: Number(globalCardRadius),
+          global_border_mode: globalBorderMode,
+          global_classic_border: globalClassicBorder,
+          global_border_color: globalBorderColor,
+          global_border_width: Number(globalBorderWidth),
+          global_text_position: globalTextPosition,
+          card_padding: Number(globalCardPadding),
+          image_padding: Number(globalImagePadding),
+          card_hover_effect: cardHoverEffect,
+          card_bg_color: cardBgColor,
+        });
       }
-      await updateCustomCardsSettings({
-        is_enabled: isEnabled,
-        section_title: sectionTitle,
-        section_subtitle: sectionSubtitle,
-        title_align: titleAlign,
-        title_color: titleColor,
-        subtitle_color: subtitleColor,
-        section_bg_mode: sectionBgMode,
-        section_bg_color: sectionBgColor,
-        section_gradient: sectionGradient,
-        cards_per_row: Number(cardsPerRow),
-        card_aspect_ratio: cardAspectRatio,
-        global_card_radius: Number(globalCardRadius),
-        global_border_mode: globalBorderMode,
-        global_classic_border: globalClassicBorder,
-        global_border_color: globalBorderColor,
-        global_border_width: Number(globalBorderWidth),
-        global_text_position: globalTextPosition,
-        card_padding: Number(globalCardPadding),
-        image_padding: Number(globalImagePadding),
-        card_hover_effect: cardHoverEffect,
-        card_bg_color: cardBgColor,
-      });
     } finally {
       setIsSavingSettings(false);
     }
@@ -666,17 +713,18 @@ export default function AdminCustomCardsTab({ targetSectionId, onJumpToLayout }:
     setIsSubmitting(true);
     try {
       if (activeSection) {
-        const currentList =
-          activeSection.id !== 'custom_cards_1'
-            ? (Array.isArray(activeSection.items) ? (activeSection.items as any[]) : [])
-            : (Array.isArray(activeSection.items) ? (activeSection.items as any[]) : [...adminCustomCards]);
+        const currentList = Array.isArray(activeSection.items)
+          ? (activeSection.items as any[])
+          : (activeSection.id === 'custom_cards_1' ? [...adminCustomCards] : []);
         if (isEditing && editingId) {
           const updated = currentList.map((c) =>
             c.id === editingId ? { ...c, ...formData, updated_at: new Date().toISOString() } : c
           );
           await saveSingleSectionLayout(activeSection.id, { items: updated });
-          if (adminCustomCards.some((c) => c.id === editingId)) {
-            await updateCustomCard(editingId, formData);
+          if (customCardsSections.length === 1 && activeSection.id === 'custom_cards_1') {
+            if (adminCustomCards.some((c) => c.id === editingId)) {
+              await updateCustomCard(editingId, formData);
+            }
           }
         } else {
           const newId = `custom_card_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -689,7 +737,7 @@ export default function AdminCustomCardsTab({ targetSectionId, onJumpToLayout }:
           };
           const updated = [...currentList, newCard];
           await saveSingleSectionLayout(activeSection.id, { items: updated });
-          if (customCardsSections.length === 1 && activeSection.items === undefined) {
+          if (customCardsSections.length === 1 && activeSection.id === 'custom_cards_1' && activeSection.items === undefined) {
             await createCustomCard(formData);
           }
         }
@@ -721,14 +769,15 @@ export default function AdminCustomCardsTab({ targetSectionId, onJumpToLayout }:
     setIsDeleting(true);
     try {
       if (activeSection) {
-        const currentList =
-          activeSection.id !== 'custom_cards_1'
-            ? (Array.isArray(activeSection.items) ? (activeSection.items as any[]) : [])
-            : (Array.isArray(activeSection.items) ? (activeSection.items as any[]) : [...adminCustomCards]);
+        const currentList = Array.isArray(activeSection.items)
+          ? (activeSection.items as any[])
+          : (activeSection.id === 'custom_cards_1' ? [...adminCustomCards] : []);
         const updated = currentList.filter((c) => c.id !== deleteConfirm.id);
         await saveSingleSectionLayout(activeSection.id, { items: updated });
-        if (adminCustomCards.some((c) => c.id === deleteConfirm.id)) {
-          await deleteCustomCard(deleteConfirm.id);
+        if (customCardsSections.length === 1 && activeSection.id === 'custom_cards_1') {
+          if (adminCustomCards.some((c) => c.id === deleteConfirm.id)) {
+            await deleteCustomCard(deleteConfirm.id);
+          }
         }
       } else {
         await deleteCustomCard(deleteConfirm.id);
@@ -749,7 +798,9 @@ export default function AdminCustomCardsTab({ targetSectionId, onJumpToLayout }:
     if (activeSection) {
       await saveSingleSectionLayout(activeSection.id, { items: reordered });
     }
-    await reorderCustomCards(reordered.map((c) => c.id));
+    if (!activeSection || (customCardsSections.length === 1 && activeSection.id === 'custom_cards_1')) {
+      await reorderCustomCards(reordered.map((c) => c.id));
+    }
   };
 
   const handleMoveDown = async (index: number) => {
@@ -761,7 +812,9 @@ export default function AdminCustomCardsTab({ targetSectionId, onJumpToLayout }:
     if (activeSection) {
       await saveSingleSectionLayout(activeSection.id, { items: reordered });
     }
-    await reorderCustomCards(reordered.map((c) => c.id));
+    if (!activeSection || (customCardsSections.length === 1 && activeSection.id === 'custom_cards_1')) {
+      await reorderCustomCards(reordered.map((c) => c.id));
+    }
   };
 
   return (

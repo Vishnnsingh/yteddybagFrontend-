@@ -124,6 +124,8 @@ export interface OccasionModalForm {
   title: string;
   date_badge: string;
   image_url: string;
+  image_scale: number;
+  image_position: 'bottom-right' | 'bottom-center' | 'center-right';
   bg_color: string;
   link_type: 'header' | 'dropdown';
   target_header_id?: string;
@@ -136,6 +138,8 @@ export const emptyOccasionForm: OccasionModalForm = {
   title: '',
   date_badge: '',
   image_url: '',
+  image_scale: 1.0,
+  image_position: 'bottom-right',
   bg_color: '#F9D3B4',
   link_type: 'header',
   target_header_id: '',
@@ -1562,11 +1566,16 @@ export default function ManageHomeBanner() {
       }
     }
 
+    const rawScale = Number(item.image_scale);
+    const scale = !isNaN(rawScale) && rawScale > 0 ? (rawScale > 10 ? rawScale / 100 : rawScale) : 1.0;
+
     setOccasionFormData({
       id: item.id,
       title: item.title,
       date_badge: item.date_badge || '',
       image_url: item.image_url || '',
+      image_scale: scale,
+      image_position: (item.image_position as any) || 'bottom-right',
       bg_color: item.bg_color || '#F9D3B4',
       link_type: effectiveLinkType,
       target_header_id: targetHeaderId,
@@ -1589,6 +1598,8 @@ export default function ManageHomeBanner() {
       ...occasionFormData,
       date_badge: occasionFormData.date_badge.trim() ? occasionFormData.date_badge.trim() : null,
       image_url: occasionFormData.image_url.trim() ? occasionFormData.image_url.trim() : null,
+      image_scale: Number(occasionFormData.image_scale) || 1.0,
+      image_position: occasionFormData.image_position || 'bottom-right',
     };
 
     try {
@@ -1691,9 +1702,17 @@ export default function ManageHomeBanner() {
         await saveSingleSectionLayout(activeOccasionSection.id, {
           section_title: sectionTitleInput.trim(),
           custom_label: sectionTitleInput.trim(),
+          settings: {
+            ...(activeOccasionSection.settings || {}),
+            section_title: sectionTitleInput.trim(),
+          },
         });
+        if (occasionSections.length === 1 && activeOccasionSection.id === 'occasions_1') {
+          await updateOccasionSettings({ section_title: sectionTitleInput.trim() });
+        }
+      } else {
+        await updateOccasionSettings({ section_title: sectionTitleInput.trim() });
       }
-      await updateOccasionSettings({ section_title: sectionTitleInput.trim() });
     } finally {
       setIsSavingTitle(false);
     }
@@ -1981,24 +2000,44 @@ export default function ManageHomeBanner() {
             cards_per_row: cardsPerRowInput,
           },
         });
+        if (bestsellerSections.length === 1 && activeBestsellerSection.id === 'bestsellers_1') {
+          await updateBestsellerSettings({
+            section_title: bestsellerTitleInput.trim(),
+            section_subtitle: bestsellerSubtitleInput.trim(),
+            view_all_text: viewAllTextInput.trim(),
+            view_all_url: viewAllUrlInput.trim(),
+            view_all_link_type: viewAllLinkTypeInput,
+            view_all_target_header_id: viewAllTargetHeaderId || null,
+            view_all_target_dropdown_id: viewAllTargetDropdownId || null,
+            show_view_all: showViewAllInput,
+            section_bg_mode: sectionBgModeInput,
+            section_bg_color: sectionBgColorInput,
+            card_theme: cardThemeInput,
+            card_bg_mode: cardBgModeInput,
+            card_bg_color: cardBgColorInput,
+            card_transparency: cardTransparencyInput,
+            cards_per_row: cardsPerRowInput,
+          });
+        }
+      } else {
+        await updateBestsellerSettings({
+          section_title: bestsellerTitleInput.trim(),
+          section_subtitle: bestsellerSubtitleInput.trim(),
+          view_all_text: viewAllTextInput.trim(),
+          view_all_url: viewAllUrlInput.trim(),
+          view_all_link_type: viewAllLinkTypeInput,
+          view_all_target_header_id: viewAllTargetHeaderId || null,
+          view_all_target_dropdown_id: viewAllTargetDropdownId || null,
+          show_view_all: showViewAllInput,
+          section_bg_mode: sectionBgModeInput,
+          section_bg_color: sectionBgColorInput,
+          card_theme: cardThemeInput,
+          card_bg_mode: cardBgModeInput,
+          card_bg_color: cardBgColorInput,
+          card_transparency: cardTransparencyInput,
+          cards_per_row: cardsPerRowInput,
+        });
       }
-      await updateBestsellerSettings({
-        section_title: bestsellerTitleInput.trim(),
-        section_subtitle: bestsellerSubtitleInput.trim(),
-        view_all_text: viewAllTextInput.trim(),
-        view_all_url: viewAllUrlInput.trim(),
-        view_all_link_type: viewAllLinkTypeInput,
-        view_all_target_header_id: viewAllTargetHeaderId || null,
-        view_all_target_dropdown_id: viewAllTargetDropdownId || null,
-        show_view_all: showViewAllInput,
-        section_bg_mode: sectionBgModeInput,
-        section_bg_color: sectionBgColorInput,
-        card_theme: cardThemeInput,
-        card_bg_mode: cardBgModeInput,
-        card_bg_color: cardBgColorInput,
-        card_transparency: cardTransparencyInput,
-        cards_per_row: cardsPerRowInput,
-      });
     } finally {
       setIsSavingBestsellerSettings(false);
     }
@@ -2116,15 +2155,26 @@ export default function ManageHomeBanner() {
             border_radius: promoBorderRadius,
           },
         });
+        if (promoSections.length === 1 && activePromoSection.id === 'promo_banner_1') {
+          await updatePromoBannerSettings({
+            is_enabled: promoIsEnabled,
+            autoplay: promoAutoplay,
+            autoplay_interval: Number(promoAutoplayInterval),
+            banner_height: promoBannerHeight,
+            show_dots: promoShowDots,
+            border_radius: promoBorderRadius,
+          });
+        }
+      } else {
+        await updatePromoBannerSettings({
+          is_enabled: promoIsEnabled,
+          autoplay: promoAutoplay,
+          autoplay_interval: Number(promoAutoplayInterval),
+          banner_height: promoBannerHeight,
+          show_dots: promoShowDots,
+          border_radius: promoBorderRadius,
+        });
       }
-      await updatePromoBannerSettings({
-        is_enabled: promoIsEnabled,
-        autoplay: promoAutoplay,
-        autoplay_interval: Number(promoAutoplayInterval),
-        banner_height: promoBannerHeight,
-        show_dots: promoShowDots,
-        border_radius: promoBorderRadius,
-      });
     } finally {
       setIsSavingPromoSettings(false);
     }
@@ -3393,11 +3443,17 @@ export default function ManageHomeBanner() {
                           {item.title} ›
                         </span>
                         {item.image_url ? (
-                          <img
-                            src={item.image_url}
-                            alt={item.title}
-                            className="w-8 h-8 sm:w-10 sm:h-10 object-contain drop-shadow-2xs pointer-events-none"
-                          />
+                          <div className="absolute bottom-0 right-1 h-[82%] max-w-[55%] flex items-end justify-end pointer-events-none overflow-visible">
+                            <img
+                              src={item.image_url}
+                              alt={item.title}
+                              style={{
+                                transform: `scale(${Number(item.image_scale) > 10 ? Number(item.image_scale) / 100 : Number(item.image_scale) || 1.0})`,
+                                transformOrigin: 'bottom right',
+                              }}
+                              className="max-h-full max-w-full object-contain drop-shadow-2xs"
+                            />
+                          </div>
                         ) : null}
                       </div>
 
@@ -3410,6 +3466,11 @@ export default function ManageHomeBanner() {
                           {item.date_badge && (
                             <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-white text-gray-800 border border-gray-200 shadow-2xs uppercase">
                               {item.date_badge}
+                            </span>
+                          )}
+                          {item.image_scale && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                              {Math.round((Number(item.image_scale) > 10 ? Number(item.image_scale) / 100 : Number(item.image_scale) || 1.0) * 100)}% Zoom
                             </span>
                           )}
                         </div>
@@ -6915,13 +6976,32 @@ export default function ManageHomeBanner() {
                     </div>
 
                     {occasionFormData.image_url ? (
-                      <div className="absolute bottom-1 right-2 h-24 max-w-[55%] flex items-end justify-end pointer-events-none">
-                        <img
-                          src={occasionFormData.image_url}
-                          alt="Card Preview"
-                          className="max-h-full max-w-full object-contain drop-shadow-sm"
-                        />
-                      </div>
+                      (() => {
+                        const pos = occasionFormData.image_position || 'bottom-right';
+                        const scale = Number(occasionFormData.image_scale) || 1.0;
+                        let posClass = 'bottom-0 right-2 justify-end items-end';
+                        let origin = 'bottom right';
+                        if (pos === 'bottom-center') {
+                          posClass = 'bottom-0 left-1/2 -translate-x-1/2 justify-center items-end';
+                          origin = 'bottom center';
+                        } else if (pos === 'center-right') {
+                          posClass = 'top-1/2 -translate-y-1/2 right-2 justify-end items-center';
+                          origin = 'center right';
+                        }
+                        return (
+                          <div className={`absolute ${posClass} h-[85%] max-w-[65%] flex pointer-events-none overflow-visible`}>
+                            <img
+                              src={occasionFormData.image_url}
+                              alt="Card Preview"
+                              style={{
+                                transform: `scale(${scale})`,
+                                transformOrigin: origin,
+                              }}
+                              className="max-h-full max-w-full object-contain drop-shadow-sm transition-transform duration-150"
+                            />
+                          </div>
+                        );
+                      })()
                     ) : (
                       <div className="relative self-end text-black/10 text-xs italic">
                         (No image selected)
@@ -7046,6 +7126,134 @@ export default function ManageHomeBanner() {
                       className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 font-mono text-gray-700 focus:border-[#D26900] outline-none"
                     />
                   </div>
+
+                  {/* Image Zoom & Card Arrangement Control (Only visible when image is attached) */}
+                  {occasionFormData.image_url && (
+                    <div className="p-4 bg-orange-50/40 border border-orange-200/80 rounded-2xl space-y-3.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <svg className="w-4 h-4 text-[#D26900]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                          </svg>
+                          <span className="text-xs font-bold text-gray-900 uppercase tracking-wider">
+                            Card Image Zoom & Size (Arrange)
+                          </span>
+                        </div>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-[#D26900] text-white shadow-2xs">
+                          {Math.round((occasionFormData.image_scale || 1.0) * 100)}% Zoom
+                        </span>
+                      </div>
+
+                      {/* Slider & Quick +/- Steppers */}
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOccasionFormData((p) => ({
+                              ...p,
+                              image_scale: Math.max(0.5, Math.round(((p.image_scale || 1.0) - 0.1) * 100) / 100),
+                            }))
+                          }
+                          className="w-8 h-8 rounded-lg bg-white border border-gray-200 hover:border-[#D26900] text-gray-700 font-black text-sm flex items-center justify-center shadow-2xs hover:bg-orange-50 transition cursor-pointer"
+                          title="Zoom Out (-10%)"
+                        >
+                          −
+                        </button>
+
+                        <div className="flex-1 relative flex items-center">
+                          <input
+                            type="range"
+                            min="0.5"
+                            max="2.5"
+                            step="0.05"
+                            value={occasionFormData.image_scale || 1.0}
+                            onChange={(e) =>
+                              setOccasionFormData((p) => ({
+                                ...p,
+                                image_scale: parseFloat(e.target.value),
+                              }))
+                            }
+                            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-[#D26900]"
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOccasionFormData((p) => ({
+                              ...p,
+                              image_scale: Math.min(2.5, Math.round(((p.image_scale || 1.0) + 0.1) * 100) / 100),
+                            }))
+                          }
+                          className="w-8 h-8 rounded-lg bg-white border border-gray-200 hover:border-[#D26900] text-gray-700 font-black text-sm flex items-center justify-center shadow-2xs hover:bg-orange-50 transition cursor-pointer"
+                          title="Zoom In (+10%)"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      {/* Preset Pills for fast 1-click arrange */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                        <span className="text-[11px] font-semibold text-gray-500 mr-1">Presets:</span>
+                        {[
+                          { label: '80% (Compact)', val: 0.8 },
+                          { label: '100% (Default)', val: 1.0 },
+                          { label: '125% (Large)', val: 1.25 },
+                          { label: '150% (XL)', val: 1.5 },
+                          { label: '180% (Hero Fill)', val: 1.8 },
+                          { label: '210% (Max)', val: 2.1 },
+                        ].map((preset) => (
+                          <button
+                            key={preset.val}
+                            type="button"
+                            onClick={() =>
+                              setOccasionFormData((p) => ({
+                                ...p,
+                                image_scale: preset.val,
+                              }))
+                            }
+                            className={`px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                              Math.abs((occasionFormData.image_scale || 1.0) - preset.val) < 0.04
+                                ? 'bg-[#D26900] text-white shadow-2xs'
+                                : 'bg-white hover:bg-orange-50 text-gray-700 border border-gray-200'
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Alignment / Position Selector */}
+                      <div className="pt-2 border-t border-orange-200/60 flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold text-gray-700">Image Alignment:</span>
+                        <div className="flex items-center gap-1.5">
+                          {[
+                            { id: 'bottom-right', label: 'Bottom Right (Standard)' },
+                            { id: 'bottom-center', label: 'Bottom Center' },
+                            { id: 'center-right', label: 'Center Right' },
+                          ].map((pos) => (
+                            <button
+                              key={pos.id}
+                              type="button"
+                              onClick={() =>
+                                setOccasionFormData((p) => ({
+                                  ...p,
+                                  image_position: pos.id as any,
+                                }))
+                              }
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                                (occasionFormData.image_position || 'bottom-right') === pos.id
+                                  ? 'bg-neutral-800 text-white'
+                                  : 'bg-white text-gray-700 border border-gray-200 hover:border-gray-300'
+                              }`}
+                            >
+                              {pos.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 3. Click Redirection Destination (ONLY Header Category or Dropdown Item — NO Custom URL) */}

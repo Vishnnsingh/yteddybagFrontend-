@@ -78,7 +78,7 @@ export default function Home() {
         return (
           <HomeSubBanner
             sectionId={section.id}
-            titleOverride={section.section_title}
+            titleOverride={section.section_title ?? section.settings?.section_title}
             itemIds={section.item_ids}
             customItems={section.items}
             paddingTop={pTop}
@@ -89,7 +89,7 @@ export default function Home() {
         return (
           <HomeOccasionsSection
             sectionId={section.id}
-            titleOverride={section.section_title}
+            titleOverride={section.section_title ?? section.settings?.section_title}
             itemIds={section.item_ids}
             customItems={section.items}
             paddingTop={pTop}
@@ -100,12 +100,12 @@ export default function Home() {
         return (
           <HomeBestsellersSection
             sectionId={section.id}
-            titleOverride={section.section_title}
-            subtitleOverride={section.section_subtitle}
-            cardThemeOverride={section.card_theme || section.theme}
-            cardsPerRowOverride={section.cards_per_row ? String(section.cards_per_row) : undefined}
-            bgModeOverride={section.section_bg_mode as any}
-            bgColorOverride={section.section_bg_color}
+            titleOverride={section.section_title ?? section.settings?.section_title}
+            subtitleOverride={section.section_subtitle ?? section.settings?.section_subtitle}
+            cardThemeOverride={section.card_theme || section.theme || section.settings?.card_theme}
+            cardsPerRowOverride={section.cards_per_row ? String(section.cards_per_row) : (section.settings?.cards_per_row ? String(section.settings.cards_per_row) : undefined)}
+            bgModeOverride={(section.section_bg_mode || section.settings?.section_bg_mode) as any}
+            bgColorOverride={section.section_bg_color || section.settings?.section_bg_color}
             itemIds={section.item_ids}
             customItems={section.items}
             viewAllUrlOverride={section.settings?.view_all_url || (section as any).view_all_url}
@@ -119,15 +119,16 @@ export default function Home() {
         return (
           <HomeCustomCardsSection
             sectionId={section.id}
-            titleOverride={section.section_title}
-            subtitleOverride={section.section_subtitle}
-            borderModeOverride={section.border_mode}
-            classicBorderOverride={section.classic_border_style}
-            aspectRatioOverride={section.card_aspect_ratio}
-            cardsPerRowOverride={section.cards_per_row}
-            textPositionOverride={section.text_position}
-            bgModeOverride={section.section_bg_mode}
-            bgColorOverride={section.section_bg_color}
+            titleOverride={section.section_title ?? section.settings?.section_title}
+            subtitleOverride={section.section_subtitle ?? section.settings?.section_subtitle}
+            borderModeOverride={section.border_mode || section.settings?.global_border_mode}
+            classicBorderOverride={section.classic_border_style || section.settings?.global_classic_border}
+            aspectRatioOverride={section.card_aspect_ratio || section.settings?.card_aspect_ratio}
+            cardsPerRowOverride={section.cards_per_row || section.settings?.cards_per_row}
+            textPositionOverride={section.text_position || section.settings?.global_text_position}
+            bgModeOverride={section.section_bg_mode || section.settings?.section_bg_mode}
+            bgColorOverride={section.section_bg_color || section.settings?.section_bg_color}
+            settingsOverride={section.settings}
             itemIds={section.item_ids}
             customItems={section.items}
             paddingTop={pTop}
@@ -138,8 +139,8 @@ export default function Home() {
         return (
           <HomePromoBannerSection
             sectionId={section.id}
-            heightOverride={section.banner_height}
-            radiusOverride={section.border_radius}
+            heightOverride={section.banner_height || section.settings?.banner_height}
+            radiusOverride={section.border_radius || section.settings?.border_radius}
             itemIds={section.item_ids}
             customItems={section.items}
             paddingTop={pTop}
