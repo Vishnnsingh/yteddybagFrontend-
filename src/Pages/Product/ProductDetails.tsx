@@ -6,7 +6,9 @@ import { motion } from 'framer-motion';
 import type { AppDispatch, RootState } from '../../redux/store';
 import { fetchProductById } from '../../redux/slices/productSlice';
 import { toggleWishlist } from '../../redux/slices/wishlistSlice';
+import { addToCart } from '../../redux/slices/cartSlice';
 import { useRelatedProductsQuery } from '../../hooks/useProductsQuery';
+import { useCheckDelhiveryPincodeQuery } from '../../hooks/useOrdersQuery';
 import ProductCard from '../../Components/ProductCard';
 import PageLoader from '../../Components/PageLoader';
 
@@ -40,13 +42,49 @@ export default function ProductDetails() {
   // TanStack Query: Fetch up to 50 related products from the same category
   const { data: relatedData } = useRelatedProductsQuery(activeId, 50);
 
-  // Fetch product on route change
+  // Delhivery Pincode Delivery Checker State
+  const [pincodeInput, setPincodeInput] = useState(() => {
+    return localStorage.getItem('yteddy_delivery_pincode') || '';
+  });
+  const [activePincode, setActivePincode] = useState(() => {
+    return localStorage.getItem('yteddy_delivery_pincode') || '';
+  });
+  const [isEditingPincode, setIsEditingPincode] = useState(false);
+  const [pincodeError, setPincodeError] = useState('');
+
+  const {
+    data: pincodeDeliveryData,
+    isLoading: isCheckingPincode,
+  } = useCheckDelhiveryPincodeQuery(activePincode, {
+    enabled: Boolean(activePincode && activePincode.length === 6 && /^\d{6}$/.test(activePincode)),
+  });
+
+  const handleCheckPincode = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const clean = pincodeInput.trim();
+    if (!clean) {
+      setPincodeError('Please enter a 6-digit PIN code');
+      return;
+    }
+    if (!/^\d{6}$/.test(clean)) {
+      setPincodeError('Please enter a valid 6-digit Indian PIN code');
+      return;
+    }
+    setPincodeError('');
+    setActivePincode(clean);
+    setIsEditingPincode(false);
+    localStorage.setItem('yteddy_delivery_pincode', clean);
+  };
+
+  // Fetch product on route change (deduplicated if already loaded)
   useEffect(() => {
     if (activeId) {
-      dispatch(fetchProductById(activeId));
+      if (!currentProduct || (currentProduct.id !== activeId && currentProduct.slug !== activeId)) {
+        dispatch(fetchProductById(activeId));
+      }
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }, [dispatch, activeId]);
+  }, [dispatch, activeId, currentProduct]);
 
   // Do NOT add default dummy fields on load (clean unselected state)
   useEffect(() => {
@@ -57,32 +95,88 @@ export default function ProductDetails() {
     }
   }, [currentProduct]);
 
-  // Mandatory Auth Check for Add to Cart
+  // Add to Cart with Active Options (Color, Size, Qty) + Toast notification matching Wishlist
   const handleAddToCart = () => {
-    if (!isAuthenticated) {
-      toast.error('Please login to add items to your cart');
-      navigate('/login', { state: { from: window.location.pathname } });
-      return;
-    }
-    const details = [selectedColor, selectedSize].filter(Boolean).join(', ');
+    if (!currentProduct) return;
+
+    const chosenColor =
+      selectedColor ||
+      (currentProduct.colors && currentProduct.colors.length > 0
+        ? typeof currentProduct.colors[0] === 'string'
+          ? currentProduct.colors[0]
+          : currentProduct.colors[0].name
+        : null);
+
+    const chosenSize =
+      selectedSize ||
+      (currentProduct.sizes && currentProduct.sizes.length > 0
+        ? currentProduct.sizes[0]
+        : null);
+
+    dispatch(
+      addToCart({
+        product: currentProduct,
+        selectedColor: chosenColor,
+        selectedSize: chosenSize,
+        quantity: quantity || 1,
+      })
+    );
+
+    const details = [chosenColor, chosenSize].filter(Boolean).join(' • ');
+
+    const cartToastIcon = (
+      <svg
+        className="w-4.5 h-4.5 text-[#D26900] fill-none stroke-current shrink-0"
+        viewBox="0 0 24 24"
+        strokeWidth={2}
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
+        />
+      </svg>
+    );
+
     toast.success(
-      `Added "${currentProduct?.title}"${details ? ` (${details})` : ''} to Cart!`,
+      `Added "${currentProduct.title}"${details ? ` (${details})` : ''} to Bag!`,
       {
-        icon: '🛍️',
+        icon: cartToastIcon,
+        action: {
+          label: 'View Bag',
+          onClick: () => navigate('/cart'),
+        },
       }
     );
   };
 
-  // Mandatory Auth Check for Buy Now
+  // Buy Now: adds to cart with active options and navigates to Cart
   const handleBuyNow = () => {
-    if (!isAuthenticated) {
-      toast.error('Please login to proceed to checkout');
-      navigate('/login', { state: { from: window.location.pathname } });
-      return;
-    }
-    toast.success(`Proceeding to checkout for "${currentProduct?.title}"...`, {
-      icon: '⚡',
-    });
+    if (!currentProduct) return;
+
+    const chosenColor =
+      selectedColor ||
+      (currentProduct.colors && currentProduct.colors.length > 0
+        ? typeof currentProduct.colors[0] === 'string'
+          ? currentProduct.colors[0]
+          : currentProduct.colors[0].name
+        : null);
+
+    const chosenSize =
+      selectedSize ||
+      (currentProduct.sizes && currentProduct.sizes.length > 0
+        ? currentProduct.sizes[0]
+        : null);
+
+    dispatch(
+      addToCart({
+        product: currentProduct,
+        selectedColor: chosenColor,
+        selectedSize: chosenSize,
+        quantity: quantity || 1,
+      })
+    );
+    navigate('/cart');
   };
 
   // Mandatory Auth Check for Wishlist
@@ -610,6 +704,154 @@ export default function ProductDetails() {
                     </>
                   )}
                 </button>
+              </div>
+            </div>
+
+            {/* ========================================================= */}
+            {/* DELHIVERY B2C LOGISTICS & PINCODE SERVICEABILITY CHECKER */}
+            {/* ========================================================= */}
+            <div className="p-4 sm:p-5 bg-white rounded-xl border border-gray-200 shadow-2xs space-y-3.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-[#D26900]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" />
+                  </svg>
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-900">
+                    Delivery Options
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest bg-gray-100 px-2 py-0.5 rounded">
+                  Delhivery Express
+                </span>
+              </div>
+
+              {/* Pincode Input or Checked Pill */}
+              {activePincode && !isEditingPincode ? (
+                <div className="flex items-center justify-between p-2.5 rounded-lg border border-orange-200 bg-orange-50/50">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-xs text-gray-700">
+                      Deliver to: <strong className="font-mono text-gray-900">{activePincode}</strong>
+                      {pincodeDeliveryData?.city && (
+                        <span className="text-gray-500 ml-1">({pincodeDeliveryData.city})</span>
+                      )}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEditingPincode(true);
+                      setPincodeInput(activePincode);
+                    }}
+                    className="text-xs font-bold text-[#D26900] hover:text-[#B85800] uppercase tracking-wider hover:underline cursor-pointer"
+                  >
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleCheckPincode} className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        maxLength={6}
+                        value={pincodeInput}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                          setPincodeInput(val);
+                          if (pincodeError) setPincodeError('');
+                        }}
+                        placeholder="Enter 6-digit Indian PIN code"
+                        className="w-full h-11 px-3.5 pr-8 rounded-lg border border-gray-300 bg-white text-xs font-mono font-medium text-gray-900 placeholder:text-gray-400 placeholder:font-sans focus:outline-none focus:border-[#D26900] focus:ring-1 focus:ring-[#D26900] transition-colors"
+                      />
+                      {pincodeInput && (
+                        <button
+                          type="button"
+                          onClick={() => setPincodeInput('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isCheckingPincode || pincodeInput.trim().length !== 6}
+                      className="h-11 px-5 rounded-lg bg-[#D26900] hover:bg-[#B85800] text-white text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs hover:shadow cursor-pointer shrink-0"
+                    >
+                      {isCheckingPincode ? 'Checking...' : 'Check'}
+                    </button>
+                  </div>
+                  {pincodeError && (
+                    <p className="text-[11px] text-red-600 font-medium pl-1">{pincodeError}</p>
+                  )}
+                </form>
+              )}
+
+              {/* Delivery Serviceability Highlights */}
+              {isCheckingPincode ? (
+                <div className="flex items-center gap-2 text-xs text-gray-500 py-1">
+                  <div className="w-3.5 h-3.5 border-2 border-[#D26900] border-t-transparent rounded-full animate-spin" />
+                  <span>Checking serviceability with Delhivery courier...</span>
+                </div>
+              ) : activePincode && pincodeDeliveryData ? (
+                pincodeDeliveryData.serviceable ? (
+                  <div className="space-y-2 pt-1 border-t border-gray-100 text-xs">
+                    <div className="flex items-center gap-2 text-emerald-700 font-semibold">
+                      <svg className="w-4 h-4 shrink-0 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span>
+                        Get it by <strong className="text-gray-900">{pincodeDeliveryData.estimatedDeliveryDate}</strong>
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-gray-600 pt-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-emerald-600 font-bold">✓</span>
+                        <span>
+                          {pincodeDeliveryData.codAvailable
+                            ? 'Cash on Delivery Available'
+                            : 'Online Payment Only'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-emerald-600 font-bold">✓</span>
+                        <span>All India Delivery (Free on ₹499+)</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 space-y-1">
+                    <p className="font-bold">Currently not serviceable</p>
+                    <p className="text-[11px] text-red-600">
+                      Sorry, Delhivery does not deliver to PIN code {activePincode} at this moment. Please try an alternate PIN code.
+                    </p>
+                  </div>
+                )
+              ) : (
+                <div className="space-y-2 pt-1 border-t border-gray-100 text-[11px] text-gray-600">
+                  <div className="flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#D26900]" />
+                    <span>Enter your 6-digit PIN code to check exact delivery date & COD availability</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#D26900]" />
+                    <span>Express dispatch across all 28 states & 8 UTs via Delhivery B2C Logistics</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Trust Badges Strip */}
+              <div className="pt-2 border-t border-gray-100 grid grid-cols-2 gap-2 text-[11px] text-gray-600">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[#D26900] font-bold">★</span>
+                  <span>100% Original Products</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[#D26900] font-bold">★</span>
+                  <span>Easy 7-Day Returns</span>
+                </div>
               </div>
             </div>
 

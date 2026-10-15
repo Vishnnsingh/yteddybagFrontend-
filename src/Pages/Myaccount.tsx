@@ -5,6 +5,13 @@ import { toast } from 'sonner';
 import type { RootState, AppDispatch } from '../redux/store';
 import { logoutUserAPI } from '../redux/slices/authSlice';
 import { useAccount, type UserAddress } from '../Context/AccountContext';
+import AddressModal from '../Components/AddressModal';
+import {
+    useMyOrdersQuery,
+    useCancelMyOrderMutation,
+    usePayOrderMutation,
+    type OrderRecord,
+} from '../hooks/useOrdersQuery';
 
 // Verified Badge Icon matching user's reference (scalloped green circle with white checkmark)
 const VerifiedBadge = ({ className = 'w-5 h-5' }: { className?: string }) => (
@@ -44,6 +51,179 @@ type TabKey =
     | 'edit-profile'
     | 'addresses'
     | 'delete-account';
+
+// Package Box with Status Badge (Matches Myntra Reference Screenshot 1 & 2)
+const PackageBoxStatusIcon = ({ status }: { status: string }) => {
+    const isCancelled = status.toLowerCase() === 'cancelled';
+    const isDelivered = status.toLowerCase() === 'delivered';
+    const isConfirmedOrPlaced = ['placed', 'confirmed'].includes(status.toLowerCase());
+
+    return (
+        <div
+            className={`relative w-11 h-11 shrink-0 flex items-center justify-center rounded-xl border ${
+                isCancelled
+                    ? 'bg-rose-50/90 border-rose-100'
+                    : isDelivered || isConfirmedOrPlaced
+                    ? 'bg-[#ECFDF5] border-[#A7F3D0]'
+                    : 'bg-orange-50/80 border-orange-200'
+            }`}
+        >
+            {/* 3D Isometric Cardboard Box */}
+            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path
+                    d="M12 3L20 7.5V16.5L12 21L4 16.5V7.5L12 3Z"
+                    fill={isCancelled ? '#FFF1F2' : isDelivered || isConfirmedOrPlaced ? '#FFFFFF' : '#FEF3C7'}
+                    stroke={isCancelled ? '#1F2937' : '#111827'}
+                    strokeWidth="1.5"
+                    strokeLinejoin="round"
+                />
+                <path
+                    d="M12 12L20 7.5M12 12V21M12 12L4 7.5"
+                    stroke={isCancelled ? '#1F2937' : '#111827'}
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                />
+            </svg>
+
+            {/* Bottom-right emblem circle badge */}
+            {isCancelled ? (
+                <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-red-500 border-2 border-white flex items-center justify-center text-white shadow-2xs">
+                    <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </span>
+            ) : isDelivered ? (
+                <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-600 border-2 border-white flex items-center justify-center text-white shadow-2xs">
+                    <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                </span>
+            ) : null}
+        </div>
+    );
+};
+
+// Custom Radio Option for Filters Modal (Matches Myntra Reference Screenshots 2 & 3)
+const FilterRadioOption = ({
+    selected,
+    onSelect,
+    label,
+}: {
+    selected: boolean;
+    onSelect: () => void;
+    label: string;
+}) => (
+    <div
+        onClick={onSelect}
+        className="flex items-center gap-3 py-2.5 cursor-pointer group select-none"
+    >
+        <div
+            className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors shrink-0 ${
+                selected
+                    ? 'border-[#D26900]'
+                    : 'border-gray-300 group-hover:border-[#D26900]'
+            }`}
+        >
+            {selected && (
+                <div className="w-2 h-2 rounded-full bg-[#D26900]" />
+            )}
+        </div>
+        <span
+            className={`text-xs sm:text-sm transition-colors ${
+                selected ? 'text-gray-900 font-bold' : 'text-gray-700 group-hover:text-gray-900'
+            }`}
+        >
+            {label}
+        </span>
+    </div>
+);
+
+// Format human-readable order subtext matching Myntra Screenshot 1
+const getOrderSubtext = (order: OrderRecord) => {
+    const isCancelled = order.orderStatus === 'Cancelled';
+    const isDelivered = order.orderStatus === 'Delivered';
+    const dt = new Date(order.cancelledAt || order.updatedAt || order.createdAt);
+    const dateFormatted = dt.toLocaleDateString('en-IN', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+    });
+    const timeFormatted = dt.toLocaleTimeString('en-IN', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+    });
+
+    if (isCancelled) {
+        return `on ${dateFormatted}, ${timeFormatted} As per your request`;
+    }
+    if (isDelivered) {
+        return `on ${dateFormatted}`;
+    }
+    if (order.estimatedDeliveryDate) {
+        return `Arriving by ${order.estimatedDeliveryDate}`;
+    }
+    // Dynamic 4-6 days delivery estimate range (e.g. 20 Oct - 22 Oct)
+    const baseDate = new Date(order.createdAt || Date.now());
+    const minD = new Date(baseDate);
+    minD.setDate(minD.getDate() + 4);
+    const maxD = new Date(baseDate);
+    maxD.setDate(maxD.getDate() + 6);
+    const minDay = minD.getDate();
+    const maxDay = maxD.getDate();
+    const month = maxD.toLocaleString('en-IN', { month: 'short' });
+    return `Arriving by ${minDay} ${month} - ${maxDay} ${month}`;
+};
+
+// Format subtext for an individual item that was cancelled
+const getItemCancelSubtext = (item: any, order: OrderRecord) => {
+    const dt = new Date(item.cancelledAt || order.cancelledAt || order.updatedAt || order.createdAt);
+    const dateFormatted = dt.toLocaleDateString('en-IN', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+    });
+    const timeFormatted = dt.toLocaleTimeString('en-IN', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+    });
+    return `on ${dateFormatted}, ${timeFormatted} As per your request`;
+};
+
+// Format ordinal date (e.g. 22nd Oct 2026 - Matches Image 2)
+const formatOrdinalDate = (d: Date) => {
+    const day = d.getDate();
+    const suffix = (n: number) => {
+        if (n > 3 && n < 21) return 'th';
+        switch (n % 10) {
+            case 1: return 'st';
+            case 2: return 'nd';
+            case 3: return 'rd';
+            default: return 'th';
+        }
+    };
+    const month = d.toLocaleString('en-IN', { month: 'short' });
+    const year = d.getFullYear();
+    return `${day}${suffix(day)} ${month} ${year}`;
+};
+
+const getDeliveryDateStr = (order: OrderRecord) => {
+    if (order.estimatedDeliveryDate) return order.estimatedDeliveryDate;
+    const baseDate = new Date(order.createdAt || Date.now());
+    const d = new Date(baseDate);
+    d.setDate(d.getDate() + 5);
+    return formatOrdinalDate(d);
+};
+
+const getOrderedDateStr = (order: OrderRecord) => {
+    const d = new Date(order.createdAt || Date.now());
+    const day = d.getDate();
+    const month = d.toLocaleString('en-IN', { month: 'short' });
+    const year = d.getFullYear();
+    return `${day} ${month} ${year}`;
+};
 
 // Custom Checkbox with Brand Orange CTA styling (no browser blue)
 const CustomCheckbox = ({
@@ -91,40 +271,6 @@ const CustomCheckbox = ({
         <span className="text-xs sm:text-sm text-gray-700 font-medium">
             {label}
         </span>
-    </label>
-);
-
-// Custom Radio button with Brand Orange CTA styling
-const CustomRadio = ({
-    checked,
-    onChange,
-    label,
-    name,
-}: {
-    checked: boolean;
-    onChange: () => void;
-    label: string;
-    name: string;
-}) => (
-    <label className="flex items-center gap-2.5 cursor-pointer select-none group">
-        <div
-            className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors shrink-0 ${checked
-                ? 'border-[#D26900]'
-                : 'border-gray-400 bg-white group-hover:border-[#D26900]'
-                }`}
-        >
-            {checked && (
-                <div className="w-2 h-2 rounded-full bg-[#D26900]" />
-            )}
-        </div>
-        <input
-            type="radio"
-            name={name}
-            checked={checked}
-            onChange={onChange}
-            className="sr-only"
-        />
-        <span className="text-xs sm:text-sm text-gray-800 font-medium">{label}</span>
     </label>
 );
 
@@ -545,8 +691,6 @@ export default function Myaccount() {
         fetchProfile,
         fetchAddresses,
         updateProfile,
-        addAddress,
-        updateAddress,
         deleteAddress,
         setDefaultAddress,
         deleteAccount,
@@ -587,6 +731,7 @@ export default function Myaccount() {
 
     const handleTabChange = (tab: TabKey) => {
         setActiveTab(tab);
+        setViewingDetailOrder(null);
         setSearchParams({ tab });
         window.scrollTo({ top: 0, behavior: 'smooth' });
         document.getElementById('app-scroll-container')?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -608,6 +753,183 @@ export default function Myaccount() {
             fetchAddresses();
         }
     }, [activeTab, isAuthenticated, fetchProfile, fetchAddresses]);
+
+    // -------------------------------------------------------------
+    // ORDERS & RETURNS STATE (Myntra-style Search & Filters)
+    // -------------------------------------------------------------
+    const [orderSearch, setOrderSearch] = useState('');
+    const [selectedStatus, setSelectedStatus] = useState<string>('All');
+    const [selectedTime, setSelectedTime] = useState<string>('Anytime');
+    const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+    const [filterModalTab, setFilterModalTab] = useState<'status' | 'time'>('status');
+    const [tempStatus, setTempStatus] = useState<string>('All');
+    const [tempTime, setTempTime] = useState<string>('Anytime');
+
+    const CANCELLATION_REASONS = [
+        'Incorrect size ordered',
+        'Product not required anymore',
+        'Cash Issue',
+        'Ordered By Mistake',
+        'Wants to change style/color',
+        'Delayed Delivery Cancellation',
+        'Duplicate Order',
+    ];
+
+    const [selectedTrackOrder, setSelectedTrackOrder] = useState<OrderRecord | null>(null);
+    const [selectedTrackItem, setSelectedTrackItem] = useState<any | null>(null);
+    const [cancellingOrder, setCancellingOrder] = useState<OrderRecord | null>(null);
+    const [cancellingItemIndex, setCancellingItemIndex] = useState<number | null>(null);
+    const [selectedCancelReason, setSelectedCancelReason] = useState<string>('Incorrect size ordered');
+    const [cancellationComments, setCancellationComments] = useState<string>('');
+    const [cancelledSuccessOrder, setCancelledSuccessOrder] = useState<OrderRecord | null>(null);
+    const [cancelledSuccessItem, setCancelledSuccessItem] = useState<any | null>(null);
+    const [isCancellingLoading, setIsCancellingLoading] = useState(false);
+    const [viewingDetailOrder, setViewingDetailOrder] = useState<{ order: OrderRecord; itemIndex: number } | null>(null);
+
+    // Fetch all user orders
+    const {
+        data: customerOrders = [],
+        isLoading: isOrdersLoading,
+        refetch: refetchCustomerOrders,
+    } = useMyOrdersQuery();
+    const cancelOrderMutation = useCancelMyOrderMutation();
+    const payOrderMutation = usePayOrderMutation();
+
+    const [selectedPayOrder, setSelectedPayOrder] = useState<OrderRecord | null>(null);
+    const [isPayingNow, setIsPayingNow] = useState(false);
+
+    const handleConfirmPrePay = async () => {
+        if (!selectedPayOrder) return;
+        setIsPayingNow(true);
+        try {
+            await payOrderMutation.mutateAsync({
+                orderId: selectedPayOrder.id,
+                paymentDetails: {
+                    method: 'UPI',
+                    paidAt: new Date().toISOString(),
+                    amount: selectedPayOrder.totalAmount,
+                },
+            });
+            toast.success(`Payment of ₹${selectedPayOrder.totalAmount.toLocaleString('en-IN')} confirmed! Order is now prepaid. 🎉`);
+            setSelectedPayOrder(null);
+            refetchCustomerOrders();
+        } catch (err: any) {
+            toast.error(err.response?.data?.message || err.message || 'Payment processing failed');
+        } finally {
+            setIsPayingNow(false);
+        }
+    };
+
+    const handleOpenCancelFlow = (order: OrderRecord, itemIndex?: number) => {
+        setCancellingOrder(order);
+        setCancellingItemIndex(typeof itemIndex === 'number' ? itemIndex : null);
+        setSelectedCancelReason('Incorrect size ordered');
+        setCancellationComments('');
+    };
+
+    const handleConfirmCancelOrder = async () => {
+        if (!cancellingOrder) return;
+        setIsCancellingLoading(true);
+        try {
+            const targetItem =
+                cancellingItemIndex !== null ? cancellingOrder.items[cancellingItemIndex] : undefined;
+
+            const updated = await cancelOrderMutation.mutateAsync({
+                orderId: cancellingOrder.id,
+                itemIndex: cancellingItemIndex !== null ? cancellingItemIndex : undefined,
+                productId: targetItem?.productId,
+                reason: selectedCancelReason,
+                comment: cancellationComments.trim() || undefined,
+            });
+
+            const itemTitle = targetItem?.title || `Order #${cancellingOrder.orderNumber}`;
+            toast.success(`"${itemTitle}" has been cancelled.`);
+
+            setCancelledSuccessOrder(updated || {
+                ...cancellingOrder,
+                orderStatus: (cancellingOrder.items.length <= 1 || cancellingItemIndex === null) ? 'Cancelled' : cancellingOrder.orderStatus,
+                cancellationReason: selectedCancelReason,
+            });
+            setCancelledSuccessItem(targetItem || cancellingOrder.items[0]);
+            setCancellingOrder(null);
+            setCancellingItemIndex(null);
+            refetchCustomerOrders();
+        } catch (err: any) {
+            toast.error(err.response?.data?.message || 'Failed to cancel item');
+        } finally {
+            setIsCancellingLoading(false);
+        }
+    };
+
+    const handleCloseCancelSuccess = () => {
+        setCancelledSuccessOrder(null);
+        setCancelledSuccessItem(null);
+    };
+
+    // Filter modal actions
+    const openFilterModal = () => {
+        setTempStatus(selectedStatus);
+        setTempTime(selectedTime);
+        setIsFilterModalOpen(true);
+    };
+
+    const handleClearFilters = () => {
+        setTempStatus('All');
+        setTempTime('Anytime');
+    };
+
+    const handleApplyFilters = () => {
+        setSelectedStatus(tempStatus);
+        setSelectedTime(tempTime);
+        setIsFilterModalOpen(false);
+    };
+
+    // Filter orders by status, time, and search
+    const filteredCustomerOrders = customerOrders.filter((order) => {
+        // Status filter
+        if (selectedStatus !== 'All') {
+            if (selectedStatus === 'On the way') {
+                const inTransit = ['Placed', 'Confirmed', 'Packed', 'Shipped', 'Out for Delivery'];
+                if (!inTransit.includes(order.orderStatus)) return false;
+            } else if (selectedStatus === 'Delivered') {
+                if (order.orderStatus !== 'Delivered') return false;
+            } else if (selectedStatus === 'Cancelled') {
+                if (order.orderStatus !== 'Cancelled') return false;
+            } else if (selectedStatus === 'Returned') {
+                if ((order.orderStatus as string) !== 'Returned') return false;
+            } else {
+                if (order.orderStatus.toLowerCase() !== selectedStatus.toLowerCase()) return false;
+            }
+        }
+
+        // Time filter
+        if (selectedTime !== 'Anytime') {
+            const orderTime = new Date(order.createdAt).getTime();
+            const now = Date.now();
+            if (selectedTime === 'Last 30 days') {
+                if (now - orderTime > 30 * 24 * 60 * 60 * 1000) return false;
+            } else if (selectedTime === 'Last 6 months') {
+                if (now - orderTime > 182 * 24 * 60 * 60 * 1000) return false;
+            } else if (selectedTime === 'Last year') {
+                if (now - orderTime > 365 * 24 * 60 * 60 * 1000) return false;
+            }
+        }
+
+        // Search filter
+        if (orderSearch.trim()) {
+            const q = orderSearch.toLowerCase().trim();
+            const matchesNumber = order.orderNumber.toLowerCase().includes(q);
+            const matchesWaybill = !!order.delhiveryWaybill && order.delhiveryWaybill.toLowerCase().includes(q);
+            const matchesItem = order.items.some((item) =>
+                item.title.toLowerCase().includes(q)
+            );
+            if (!matchesNumber && !matchesWaybill && !matchesItem) return false;
+        }
+
+        return true;
+    });
+
+    const hasActiveFilters = selectedStatus !== 'All' || selectedTime !== 'Anytime';
 
     // Logout handler
     const handleLogout = async () => {
@@ -680,119 +1002,19 @@ export default function Myaccount() {
     };
 
     // -------------------------------------------------------------
-    // ADDRESS MODAL & FORM STATE
+    // ADDRESS MODAL STATE (Shared AddressModal component)
     // -------------------------------------------------------------
     const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
     const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
-    const [addressForm, setAddressForm] = useState({
-        name: '',
-        mobile: '',
-        pincode: '',
-        state: '',
-        houseNo: '',
-        street: '',
-        locality: '',
-        city: '',
-        type: 'HOME' as 'HOME' | 'OFFICE',
-        openOnSaturday: false,
-        openOnSunday: false,
-        isDefault: false,
-    });
-
-    // Lock background body scrolling when address modal is open
-    useEffect(() => {
-        if (isAddressModalOpen) {
-            document.body.style.overflow = 'hidden';
-        } else {
-            document.body.style.overflow = 'unset';
-        }
-        return () => {
-            document.body.style.overflow = 'unset';
-        };
-    }, [isAddressModalOpen]);
 
     const openAddAddressModal = () => {
         setEditingAddressId(null);
-        setAddressForm({
-            name: profile?.name || user?.name || '',
-            mobile: profile?.mobile || user?.phone || '',
-            pincode: '',
-            state: '',
-            houseNo: '',
-            street: '',
-            locality: '',
-            city: '',
-            type: 'HOME',
-            openOnSaturday: false,
-            openOnSunday: false,
-            isDefault: addresses.length === 0,
-        });
         setIsAddressModalOpen(true);
     };
 
     const openEditAddressModal = (addr: UserAddress) => {
         setEditingAddressId(addr.id);
-        const parts = addr.address ? addr.address.split(', ') : ['', ''];
-        const houseNo = parts.length > 1 ? parts[0] : addr.address || '';
-        const street = parts.length > 1 ? parts.slice(1).join(', ') : '';
-
-        setAddressForm({
-            name: addr.name || '',
-            mobile: addr.mobile || '',
-            pincode: addr.pincode || '',
-            state: addr.state || '',
-            houseNo: houseNo,
-            street: street,
-            locality: addr.locality || '',
-            city: addr.city || '',
-            type: addr.type === 'OFFICE' || addr.type === 'WORK' ? 'OFFICE' : 'HOME',
-            openOnSaturday: Boolean(addr.openOnSaturday),
-            openOnSunday: Boolean(addr.openOnSunday),
-            isDefault: addr.isDefault || false,
-        });
         setIsAddressModalOpen(true);
-    };
-
-    const handleSaveAddress = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (
-            !addressForm.name.trim() ||
-            !addressForm.mobile.trim() ||
-            !addressForm.pincode.trim() ||
-            !addressForm.state.trim() ||
-            (!addressForm.houseNo.trim() && !addressForm.street.trim()) ||
-            !addressForm.locality.trim() ||
-            !addressForm.city.trim()
-        ) {
-            toast.error('Please fill in all address details');
-            return;
-        }
-
-        const combinedAddress = [addressForm.houseNo.trim(), addressForm.street.trim()]
-            .filter(Boolean)
-            .join(', ') || addressForm.houseNo || addressForm.street;
-
-        const payload = {
-            name: addressForm.name.trim(),
-            mobile: addressForm.mobile.trim(),
-            pincode: addressForm.pincode.trim(),
-            state: addressForm.state.trim(),
-            address: combinedAddress,
-            locality: addressForm.locality.trim(),
-            city: addressForm.city.trim(),
-            type: addressForm.type,
-            openOnSaturday: addressForm.type === 'OFFICE' ? addressForm.openOnSaturday : false,
-            openOnSunday: addressForm.type === 'OFFICE' ? addressForm.openOnSunday : false,
-            isDefault: addressForm.isDefault,
-        };
-
-        if (editingAddressId) {
-            const ok = await updateAddress(editingAddressId, payload);
-            if (ok) setIsAddressModalOpen(false);
-        } else {
-            const ok = await addAddress(payload);
-            if (ok) setIsAddressModalOpen(false);
-        }
     };
 
     // -------------------------------------------------------------
@@ -1873,291 +2095,1760 @@ export default function Myaccount() {
                         )}
 
                         {/* ---------------------------------------------------- */}
-                        {/* VIEW 6: ORDERS & RETURNS */}
+                        {/* VIEW 6: ORDERS & RETURNS (Myntra-style dynamic cards) */}
                         {/* ---------------------------------------------------- */}
                         {activeTab === 'orders' && (
-                            <div className="bg-white border border-gray-200 rounded-lg p-8 sm:p-12 text-center shadow-2xs">
-                                <div className="w-20 h-20 rounded-full bg-orange-50 text-[#D26900] flex items-center justify-center mx-auto mb-4">
-                                    <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                                    </svg>
+                            <div className="space-y-4 text-left font-sans">
+                                {cancelledSuccessOrder ? (
+                                    /* ======================================================== */
+                                    /* ORDER CANCELLED CONFIRMATION SCREEN (Matches Image 4)    */
+                                    /* ======================================================== */
+                                    <div className="bg-white border border-[#EAEAEC] rounded-2xl p-6 sm:p-10 text-center space-y-6 max-w-xl mx-auto shadow-2xs font-sans">
+                                        {/* Scalloped Green Seal Badge */}
+                                        <div className="flex justify-center">
+                                            <svg
+                                                className="w-14 h-14 sm:w-16 sm:h-16"
+                                                viewBox="0 0 48 48"
+                                                fill="none"
+                                                xmlns="http://www.w3.org/2000/svg"
+                                            >
+                                                <path
+                                                    d="M21.16 4.74a4.06 4.06 0 0 1 5.68 0l1.8 1.78a4.06 4.06 0 0 0 3.9 1.06l2.48-.52a4.06 4.06 0 0 1 4.74 3.12l.56 2.46a4.06 4.06 0 0 0 2.84 2.84l2.46.56a4.06 4.06 0 0 1 3.12 4.74l-.52 2.48a4.06 4.06 0 0 0 1.06 3.9l1.78 1.8a4.06 4.06 0 0 1 0 5.68l-1.78 1.8a4.06 4.06 0 0 0-1.06 3.9l.52 2.48a4.06 4.06 0 0 1-3.12 4.74l-2.46.56a4.06 4.06 0 0 0-2.84 2.84l-.56 2.46a4.06 4.06 0 0 1-4.74 3.12l-2.48-.52a4.06 4.06 0 0 0-3.9 1.06l-1.8 1.78a4.06 4.06 0 0 1-5.68 0l-1.8-1.78a4.06 4.06 0 0 0-3.9-1.06l-2.48.52a4.06 4.06 0 0 1-4.74-3.12l-.56-2.46a4.06 4.06 0 0 0-2.84-2.84l-2.46-.56a4.06 4.06 0 0 1-3.12-4.74l.52-2.48a4.06 4.06 0 0 0-1.06-3.9l-1.78-1.8a4.06 4.06 0 0 1 0-5.68l1.78-1.8a4.06 4.06 0 0 0 1.06-3.9l-.52-2.48a4.06 4.06 0 0 1 3.12-4.74l2.46-.56a4.06 4.06 0 0 0 2.84-2.84l.56-2.46a4.06 4.06 0 0 1 4.74-3.12l2.48.52a4.06 4.06 0 0 0 3.9-1.06l1.8-1.78z"
+                                                    fill="#00A572"
+                                                />
+                                                <path
+                                                    d="M17 24.5L21.5 29L31 19.5"
+                                                    stroke="#FFFFFF"
+                                                    strokeWidth="3.2"
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                />
+                                            </svg>
+                                        </div>
+
+                                        {/* Heading */}
+                                        <div className="space-y-1">
+                                            <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
+                                                Order Cancelled
+                                            </h2>
+                                            <p className="text-xs text-gray-500 font-medium">
+                                                {cancelledSuccessItem ? '1 Item cancelled' : `${cancelledSuccessOrder.items.length} ${cancelledSuccessOrder.items.length === 1 ? 'Item' : 'Items'} cancelled`} • Order #{cancelledSuccessOrder.orderNumber}
+                                            </p>
+                                        </div>
+
+                                        {/* Item Preview Box */}
+                                        <div className="space-y-2">
+                                            {(() => {
+                                                const displayItem = cancelledSuccessItem || cancelledSuccessOrder.items[0];
+                                                if (!displayItem) return null;
+                                                return (
+                                                    <div className="bg-[#FAFAFB] border border-[#EAEAEC] rounded-xl p-3 sm:p-3.5 flex items-center gap-3.5 text-left">
+                                                        {displayItem.primaryImage ? (
+                                                            <img
+                                                                src={displayItem.primaryImage}
+                                                                alt={displayItem.title}
+                                                                className="w-14 h-14 rounded-lg object-cover bg-white border border-gray-200 shrink-0"
+                                                            />
+                                                        ) : (
+                                                            <div className="w-14 h-14 rounded-lg bg-orange-50 border border-orange-200 text-[#D26900] flex items-center justify-center font-bold text-xs shrink-0">
+                                                                🧸
+                                                            </div>
+                                                        )}
+                                                        <div className="min-w-0 flex-1">
+                                                            <h4 className="font-bold text-xs sm:text-sm text-gray-900 truncate">
+                                                                {displayItem.title}
+                                                            </h4>
+                                                            <p className="text-xs text-gray-500 mt-0.5">
+                                                                {displayItem.selectedSize ? `Size: ${displayItem.selectedSize}` : 'Standard'}
+                                                                {displayItem.selectedColor ? ` • Color: ${displayItem.selectedColor}` : ''}
+                                                                {` • Qty: ${displayItem.quantity}`}
+                                                            </p>
+                                                            <p className="text-xs font-bold text-gray-900 mt-1">
+                                                                ₹{(displayItem.price * displayItem.quantity).toLocaleString('en-IN')}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
+
+                                        {/* Bullet Notes (Matches Image 4) */}
+                                        <div className="space-y-3.5 text-left bg-gray-50/60 rounded-xl p-4 border border-gray-100">
+                                            <div className="flex items-start gap-2.5">
+                                                <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                                                    ✓
+                                                </span>
+                                                <div>
+                                                    <span className="font-bold text-[11px] uppercase tracking-wider text-gray-700 block">
+                                                        REFUND DETAILS
+                                                    </span>
+                                                    <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">
+                                                        {cancelledSuccessOrder.paymentMethod.toLowerCase().includes('cod') ||
+                                                        cancelledSuccessOrder.paymentMethod.toLowerCase().includes('cash')
+                                                            ? 'A refund is not applicable on this order as it is a Pay on delivery order.'
+                                                            : `A refund of ₹${(
+                                                                  (cancelledSuccessItem?.price || cancelledSuccessOrder.totalAmount) *
+                                                                  (cancelledSuccessItem?.quantity || 1)
+                                                              ).toLocaleString('en-IN')} will be credited to your original payment source within 3-5 business days.`}
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-start gap-2.5">
+                                                <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5">
+                                                    ✓
+                                                </span>
+                                                <div>
+                                                    <span className="font-bold text-[11px] uppercase tracking-wider text-gray-700 block">
+                                                        PLEASE NOTE
+                                                    </span>
+                                                    <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">
+                                                        You will receive an email/sms confirming the cancellation shortly.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Full Width DONE Button in Brand CTA Color (#D26900) */}
+                                        <button
+                                            type="button"
+                                            onClick={handleCloseCancelSuccess}
+                                            className="w-full py-3.5 bg-[#D26900] hover:bg-[#B85800] text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-colors shadow-xs cursor-pointer"
+                                        >
+                                            DONE
+                                        </button>
+                                    </div>
+                                ) : cancellingOrder ? (
+                                    /* ======================================================== */
+                                    /* REASON FOR CANCELLATION SCREEN (Matches Image 3)         */
+                                    /* ======================================================== */
+                                    <div className="bg-white border border-[#EAEAEC] rounded-2xl p-5 sm:p-8 space-y-6 text-left shadow-2xs font-sans max-w-2xl mx-auto">
+                                        {/* Back Link */}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setCancellingOrder(null);
+                                                setCancellingItemIndex(null);
+                                            }}
+                                            className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-600 hover:text-[#D26900] transition-colors cursor-pointer"
+                                        >
+                                            <span>←</span>
+                                            <span>Back to Orders</span>
+                                        </button>
+
+                                        {/* Item Preview Card (Targeted Item) */}
+                                        <div className="space-y-2">
+                                            {(() => {
+                                                const item =
+                                                    cancellingItemIndex !== null
+                                                        ? cancellingOrder.items[cancellingItemIndex]
+                                                        : cancellingOrder.items[0];
+                                                if (!item) return null;
+                                                return (
+                                                    <div className="bg-[#FAFAFB] border border-[#EAEAEC] rounded-xl p-3.5 sm:p-4 flex items-center gap-3.5">
+                                                        {item.primaryImage ? (
+                                                            <img
+                                                                src={item.primaryImage}
+                                                                alt={item.title}
+                                                                className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg object-cover bg-white border border-gray-200 shrink-0"
+                                                            />
+                                                        ) : (
+                                                            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg bg-orange-50 border border-orange-200 text-[#D26900] flex items-center justify-center font-bold text-xs shrink-0">
+                                                                🧸
+                                                            </div>
+                                                        )}
+                                                        <div className="min-w-0 flex-1">
+                                                            <h4 className="font-bold text-xs sm:text-sm text-gray-900 truncate">
+                                                                {item.title}
+                                                            </h4>
+                                                            <p className="text-xs text-gray-500 mt-0.5">
+                                                                {item.selectedSize ? `Size: ${item.selectedSize}` : 'Standard Size'}
+                                                                {item.selectedColor ? ` • Color: ${item.selectedColor}` : ''}
+                                                                {` • Qty: ${item.quantity}`}
+                                                            </p>
+                                                            <p className="text-xs font-bold text-gray-900 mt-1">
+                                                                ₹{(item.price * item.quantity).toLocaleString('en-IN')}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
+
+                                        {/* Section: Reason for cancellation */}
+                                        <div className="space-y-3 pt-2">
+                                            <div>
+                                                <h3 className="text-sm sm:text-base font-bold text-gray-900">
+                                                    Reason for cancellation
+                                                </h3>
+                                                <p className="text-xs text-gray-500 mt-0.5">
+                                                    Please tell us correct reason for cancellation. This information is only used to improve our service
+                                                </p>
+                                            </div>
+
+                                            <div className="pt-2">
+                                                <label className="text-xs font-bold text-gray-900 block mb-2">
+                                                    Select Reason*
+                                                </label>
+                                                <div className="space-y-2.5">
+                                                    {CANCELLATION_REASONS.map((reason) => {
+                                                        const isSelected = selectedCancelReason === reason;
+                                                        return (
+                                                            <label
+                                                                key={reason}
+                                                                onClick={() => setSelectedCancelReason(reason)}
+                                                                className={`flex items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                                                                    isSelected
+                                                                        ? 'border-[#D26900] bg-orange-50/40 text-gray-900 font-semibold'
+                                                                        : 'border-gray-200 hover:border-gray-300 bg-white text-gray-700'
+                                                                }`}
+                                                            >
+                                                                <div
+                                                                    className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                                                                        isSelected
+                                                                            ? 'border-[#D26900] bg-white'
+                                                                            : 'border-gray-400 bg-white'
+                                                                    }`}
+                                                                >
+                                                                    {isSelected && (
+                                                                        <div className="w-2 h-2 rounded-full bg-[#D26900]" />
+                                                                    )}
+                                                                </div>
+                                                                <span className="text-xs sm:text-[13px]">
+                                                                    {reason}
+                                                                </span>
+                                                            </label>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+
+                                            {/* Additional Comments Textarea */}
+                                            <div className="pt-3">
+                                                <label className="text-xs font-bold text-gray-700 block mb-1.5">
+                                                    Additional Comments (Optional)
+                                                </label>
+                                                <textarea
+                                                    rows={3}
+                                                    value={cancellationComments}
+                                                    onChange={(e) => setCancellationComments(e.target.value)}
+                                                    placeholder="Additional Comments"
+                                                    className="w-full p-3 border border-gray-200 rounded-xl text-xs placeholder:text-gray-400 focus:outline-none focus:border-[#D26900] focus:ring-1 focus:ring-[#D26900]/30 transition-all resize-none"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Bottom Bar: Refund Details + CANCEL Button in Brand CTA Color (#D26900) */}
+                                        <div className="border-t border-gray-100 pt-4 flex items-center justify-between gap-4">
+                                            <div>
+                                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                                                    REFUND DETAILS
+                                                </span>
+                                                <span className="text-sm sm:text-base font-black text-gray-900">
+                                                    ₹{(() => {
+                                                        const isCod =
+                                                            cancellingOrder.paymentMethod.toLowerCase().includes('cod') ||
+                                                            cancellingOrder.paymentMethod.toLowerCase().includes('cash');
+                                                        if (isCod) return 0;
+                                                        const item =
+                                                            cancellingItemIndex !== null
+                                                                ? cancellingOrder.items[cancellingItemIndex]
+                                                                : null;
+                                                        if (item) return (item.price * item.quantity).toLocaleString('en-IN');
+                                                        return cancellingOrder.totalAmount.toLocaleString('en-IN');
+                                                    })()}
+                                                </span>
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                onClick={handleConfirmCancelOrder}
+                                                disabled={isCancellingLoading}
+                                                className="py-3 px-8 bg-[#D26900] hover:bg-[#B85800] text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-colors shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                            >
+                                                <span>{isCancellingLoading ? 'Cancelling...' : 'CANCEL'}</span>
+                                                <span className="text-sm font-bold">→</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : viewingDetailOrder ? (
+                                    /* ======================================================== */
+                                    /* ORDER DETAILS VIEW (Matches Images 2, 3, 4 Exactly)       */
+                                    /* ======================================================== */
+                                    (() => {
+                                        const detailOrder =
+                                            customerOrders.find((o) => o.id === viewingDetailOrder.order.id) ||
+                                            viewingDetailOrder.order;
+                                        const targetItem =
+                                            detailOrder.items[viewingDetailOrder.itemIndex] || detailOrder.items[0];
+                                        const isDelivered = detailOrder.orderStatus === 'Delivered';
+                                        const isCancelled =
+                                            detailOrder.orderStatus === 'Cancelled' || targetItem?.status === 'Cancelled';
+                                        const isShipped = ['Shipped', 'Out for Delivery', 'Delivered'].includes(
+                                            detailOrder.orderStatus
+                                        );
+                                        const canCancel =
+                                            ['Placed', 'Confirmed', 'Packed'].includes(detailOrder.orderStatus) &&
+                                            !isCancelled;
+                                        const isCodOrPending =
+                                            detailOrder.paymentMethod?.toLowerCase().includes('cod') ||
+                                            detailOrder.paymentMethod?.toLowerCase().includes('cash') ||
+                                            detailOrder.paymentStatus === 'Pending';
+
+                                        const itemPrice = targetItem?.price || detailOrder.totalAmount;
+                                        const itemQty = targetItem?.quantity || 1;
+                                        const itemMrp =
+                                            targetItem?.mrp && targetItem.mrp > itemPrice
+                                                ? targetItem.mrp
+                                                : Math.round(itemPrice * 1.45);
+                                        const savings = Math.max(0, (itemMrp - itemPrice) * itemQty);
+                                        const discountPercent =
+                                            itemMrp > itemPrice
+                                                ? Math.round(((itemMrp - itemPrice) / itemMrp) * 100)
+                                                : 0;
+
+                                        return (
+                                            <div className="space-y-4 max-w-2xl mx-auto text-left font-sans animate-in fade-in duration-200">
+                                                {/* Top Navigation Bar: Back & Help (Matches Image 2) */}
+                                                <div className="flex items-center justify-between gap-3 pb-1">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setViewingDetailOrder(null)}
+                                                        className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold text-gray-700 hover:text-[#D26900] transition-colors cursor-pointer group"
+                                                    >
+                                                        <span className="w-8 h-8 rounded-full bg-white border border-gray-200 shadow-2xs flex items-center justify-center text-sm font-bold text-gray-700 group-hover:bg-orange-50 group-hover:text-[#D26900] transition-colors">
+                                                            ←
+                                                        </span>
+                                                        <span>Back to Orders</span>
+                                                    </button>
+
+                                                    <Link
+                                                        to={`/help?order=${detailOrder.orderNumber}`}
+                                                        className="px-3.5 py-1.5 rounded-full border border-gray-200 hover:border-[#D26900] bg-white hover:bg-orange-50/50 text-gray-700 hover:text-[#D26900] font-semibold text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
+                                                    >
+                                                        <svg
+                                                            className="w-3.5 h-3.5 text-gray-500"
+                                                            viewBox="0 0 24 24"
+                                                            fill="none"
+                                                            stroke="currentColor"
+                                                            strokeWidth={1.8}
+                                                        >
+                                                            <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
+                                                            <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
+                                                        </svg>
+                                                        <span>Help</span>
+                                                    </Link>
+                                                </div>
+
+                                                {/* Section 1: Hero Product Showcase (Matches Image 2) */}
+                                                <div className="bg-white border border-[#EAEAEC] rounded-2xl p-5 sm:p-6 text-center space-y-3.5 shadow-2xs">
+                                                    <div className="mx-auto w-36 h-36 sm:w-44 sm:h-44 rounded-2xl overflow-hidden bg-white border border-gray-100 flex items-center justify-center p-2 shadow-2xs">
+                                                        {targetItem?.primaryImage ? (
+                                                            <img
+                                                                src={targetItem.primaryImage}
+                                                                alt={targetItem.title}
+                                                                className="w-full h-full object-contain"
+                                                            />
+                                                        ) : (
+                                                            <span className="text-4xl">🧸</span>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="space-y-1">
+                                                        <h3 className="font-black text-sm sm:text-base text-gray-900 tracking-wider uppercase">
+                                                            {targetItem?.brand || 'Y TEDDY'}
+                                                        </h3>
+                                                        <p className="text-xs sm:text-[13px] text-gray-600 font-medium max-w-md mx-auto line-clamp-2">
+                                                            {targetItem?.title}
+                                                        </p>
+                                                        <p className="text-xs text-gray-500 pt-0.5">
+                                                            Size: {targetItem?.selectedSize || 'Standard'} • Quantity:{' '}
+                                                            {targetItem?.quantity || 1}
+                                                        </p>
+                                                        <p className="text-xs font-mono text-gray-400">
+                                                            Order ID: # {detailOrder.orderNumber}
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                {/* Section 2: Delivery Status Card (Mint Green Card - Matches Image 2) */}
+                                                <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-4">
+                                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                                        <div className="space-y-0.5 text-left">
+                                                            <span className="text-xs text-gray-500 font-medium block">
+                                                                {isDelivered ? 'Delivered On' : 'Delivery On'}
+                                                            </span>
+                                                            <span className="text-base sm:text-lg font-black text-emerald-700 block">
+                                                                {getDeliveryDateStr(detailOrder)}
+                                                            </span>
+                                                            <span className="text-xs font-bold text-emerald-800 flex items-center gap-1.5 mt-0.5">
+                                                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                                                {isDelivered
+                                                                    ? 'Delivered'
+                                                                    : isCancelled
+                                                                    ? 'Cancelled'
+                                                                    : 'Order Confirmed'}
+                                                            </span>
+                                                        </div>
+
+                                                        {/* Horizontal Progress Track with Moving Truck 🚚 Icon */}
+                                                        {!isCancelled && (
+                                                            <div className="w-full sm:w-56 py-3">
+                                                                <div className="relative w-full h-1.5 bg-emerald-200/70 rounded-full flex items-center">
+                                                                    <div
+                                                                        className="h-full bg-emerald-600 rounded-full transition-all duration-500"
+                                                                        style={{
+                                                                            width: isDelivered
+                                                                                ? '100%'
+                                                                                : isShipped
+                                                                                ? '70%'
+                                                                                : '30%',
+                                                                        }}
+                                                                    />
+                                                                    <div
+                                                                        className="absolute -top-3 w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs shadow-md border-2 border-white transition-all duration-500"
+                                                                        style={{
+                                                                            left: isDelivered
+                                                                                ? 'calc(100% - 14px)'
+                                                                                : isShipped
+                                                                                ? 'calc(70% - 14px)'
+                                                                                : 'calc(30% - 14px)',
+                                                                        }}
+                                                                        title={detailOrder.orderStatus}
+                                                                    >
+                                                                        🚚
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Action Buttons: [ 📍 Track Item ] & [ ⊗ Cancel Item ] */}
+                                                    <div className="pt-3 border-t border-emerald-200/70 flex flex-wrap items-center gap-3">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectedTrackOrder(detailOrder);
+                                                                setSelectedTrackItem(targetItem);
+                                                            }}
+                                                            className="flex-1 min-w-[120px] py-2.5 px-4 bg-white hover:bg-emerald-50/70 border border-emerald-300 text-gray-800 font-bold text-xs rounded-xl transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+                                                        >
+                                                            <svg
+                                                                className="w-4 h-4 text-emerald-700"
+                                                                viewBox="0 0 24 24"
+                                                                fill="none"
+                                                                stroke="currentColor"
+                                                                strokeWidth={2}
+                                                            >
+                                                                <circle cx="12" cy="12" r="7" />
+                                                                <line x1="12" y1="2" x2="12" y2="5" />
+                                                                <line x1="12" y1="19" x2="12" y2="22" />
+                                                                <line x1="2" y1="12" x2="5" y2="12" />
+                                                                <line x1="19" y1="12" x2="22" y2="12" />
+                                                                <circle cx="12" cy="12" r="2" fill="currentColor" />
+                                                            </svg>
+                                                            <span>Track Item</span>
+                                                        </button>
+
+                                                        {canCancel && targetItem?.status !== 'Cancelled' && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    handleOpenCancelFlow(
+                                                                        detailOrder,
+                                                                        viewingDetailOrder.itemIndex
+                                                                    )
+                                                                }
+                                                                className="flex-1 min-w-[120px] py-2.5 px-4 bg-white hover:bg-red-50/70 border border-red-200 text-gray-800 hover:text-red-700 font-bold text-xs rounded-xl transition-all shadow-2xs flex items-center justify-center gap-2 cursor-pointer"
+                                                            >
+                                                                <svg
+                                                                    className="w-4 h-4 text-red-500"
+                                                                    viewBox="0 0 24 24"
+                                                                    fill="none"
+                                                                    stroke="currentColor"
+                                                                    strokeWidth={2}
+                                                                >
+                                                                    <circle cx="12" cy="12" r="9" />
+                                                                    <line x1="15" y1="9" x2="9" y2="15" />
+                                                                    <line x1="9" y1="9" x2="15" y2="15" />
+                                                                </svg>
+                                                                <span>Cancel Item</span>
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* Section: Delivery To (Matches Image 3) */}
+                                                <div className="bg-white border border-[#EAEAEC] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="flex items-start gap-3 min-w-0">
+                                                            <div className="w-9 h-9 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center text-base shrink-0 font-bold">
+                                                                👤
+                                                            </div>
+                                                            <div className="min-w-0 space-y-2.5">
+                                                                <div>
+                                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                                                                        Delivery To
+                                                                    </span>
+                                                                    <h4 className="text-sm font-bold text-gray-900 capitalize truncate">
+                                                                        {detailOrder.shippingAddress.name}
+                                                                    </h4>
+                                                                </div>
+
+                                                                <div>
+                                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                                                                        Contact Details
+                                                                    </span>
+                                                                    <p className="text-xs font-medium text-gray-800">
+                                                                        {detailOrder.shippingAddress.phone ||
+                                                                            user?.phone ||
+                                                                            '-'}
+                                                                    </p>
+                                                                </div>
+
+                                                                <div>
+                                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                                                                        Delivery Address
+                                                                    </span>
+                                                                    <p className="text-xs text-gray-600 leading-relaxed">
+                                                                        {detailOrder.shippingAddress.address},{' '}
+                                                                        {detailOrder.shippingAddress.city},{' '}
+                                                                        {detailOrder.shippingAddress.state} -{' '}
+                                                                        {detailOrder.shippingAddress.pincode}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                                                            <svg
+                                                                className="w-5 h-5"
+                                                                viewBox="0 0 24 24"
+                                                                fill="none"
+                                                                stroke="currentColor"
+                                                                strokeWidth={2}
+                                                            >
+                                                                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" />
+                                                                <circle cx="12" cy="9" r="2.5" fill="currentColor" />
+                                                            </svg>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Section 5: Pre pay for your order (Matches Image 3) */}
+                                                {isCodOrPending && !isDelivered && !isCancelled && (
+                                                    <div className="bg-white border border-[#EAEAEC] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3.5">
+                                                        <div className="flex items-start justify-between gap-3">
+                                                            <div className="space-y-0.5 min-w-0">
+                                                                <h4 className="text-sm sm:text-base font-extrabold text-gray-900">
+                                                                    Pre pay for your order
+                                                                </h4>
+                                                                <p className="text-xs text-gray-500">
+                                                                    Pay now to enjoy a cashless & hassle free delivery
+                                                                    experience
+                                                                </p>
+                                                            </div>
+                                                            <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                                                                <svg
+                                                                    className="w-5 h-5"
+                                                                    viewBox="0 0 24 24"
+                                                                    fill="none"
+                                                                    stroke="currentColor"
+                                                                    strokeWidth={1.8}
+                                                                >
+                                                                    <rect x="2" y="5" width="20" height="14" rx="2" />
+                                                                    <line x1="2" y1="10" x2="22" y2="10" />
+                                                                </svg>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Mini Item Preview Row */}
+                                                        <div className="pt-0.5">
+                                                            <span className="text-[11px] font-bold text-gray-400 block mb-1.5">
+                                                                Paying For 1 of {detailOrder.items.length} Item(s)
+                                                            </span>
+                                                            <div className="flex items-center gap-2.5 p-2 rounded-xl bg-gray-50 border border-gray-100">
+                                                                {targetItem?.primaryImage ? (
+                                                                    <img
+                                                                        src={targetItem.primaryImage}
+                                                                        alt={targetItem.title}
+                                                                        className="w-10 h-10 rounded-lg object-cover bg-white border border-gray-200 shrink-0"
+                                                                    />
+                                                                ) : (
+                                                                    <div className="w-10 h-10 rounded-lg bg-orange-50 border border-orange-200 text-[#D26900] flex items-center justify-center text-base shrink-0">
+                                                                        🧸
+                                                                    </div>
+                                                                )}
+                                                                <div className="min-w-0 flex-1">
+                                                                    <p className="text-xs font-bold text-gray-900 truncate">
+                                                                        {targetItem?.title}
+                                                                    </p>
+                                                                    <p className="text-[11px] text-gray-500">
+                                                                        {targetItem?.selectedSize
+                                                                            ? `Size: ${targetItem.selectedSize}`
+                                                                            : 'Standard Size'}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Full-width Brand CTA button */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSelectedPayOrder(detailOrder)}
+                                                            className="w-full py-3.5 bg-[#D26900] hover:bg-[#B85800] text-white font-bold text-xs sm:text-sm uppercase tracking-wide rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                                                        >
+                                                            <span>
+                                                                Pay Now: ₹{detailOrder.totalAmount.toLocaleString('en-IN')}
+                                                            </span>
+                                                        </button>
+                                                    </div>
+                                                )}
+
+                                                {/* Section 6: Item Price Breakdown & Savings (Matches Image 3) */}
+                                                <div className="bg-white border border-[#EAEAEC] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-2.5">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                                            Item Price
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                toast.info(
+                                                                    `Breakup: Item ₹${(
+                                                                        itemPrice * itemQty
+                                                                    ).toLocaleString('en-IN')} + Free Delivery = ₹${(
+                                                                        itemPrice * itemQty
+                                                                    ).toLocaleString('en-IN')}`
+                                                                );
+                                                            }}
+                                                            className="text-xs font-semibold text-[#D26900] hover:underline cursor-pointer"
+                                                        >
+                                                            View Breakup
+                                                        </button>
+                                                    </div>
+
+                                                    <div className="flex items-baseline gap-2">
+                                                        <span className="text-base sm:text-lg font-black text-gray-900">
+                                                            ₹{(itemPrice * itemQty).toLocaleString('en-IN')}
+                                                        </span>
+                                                        {itemMrp > itemPrice && (
+                                                            <>
+                                                                <span className="text-xs text-gray-400 line-through">
+                                                                    ₹{(itemMrp * itemQty).toLocaleString('en-IN')}
+                                                                </span>
+                                                                <span className="text-xs font-bold text-orange-600">
+                                                                    {discountPercent}% Off
+                                                                </span>
+                                                            </>
+                                                        )}
+                                                    </div>
+
+                                                    <p className="text-xs text-gray-500">
+                                                        Sold by:{' '}
+                                                        <span className="font-semibold text-gray-700">
+                                                            YTeddybags Official Store
+                                                        </span>
+                                                    </p>
+
+                                                    {/* Green Savings Alert */}
+                                                    {savings > 0 && (
+                                                        <div className="bg-[#ECFDF5] border border-[#A7F3D0] rounded-xl p-3 flex items-center gap-2.5 text-xs text-emerald-800 font-medium">
+                                                            <span className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                                                                %
+                                                            </span>
+                                                            <span>
+                                                                You're saving{' '}
+                                                                <strong className="font-extrabold text-emerald-900">
+                                                                    ₹{savings.toLocaleString('en-IN')}
+                                                                </strong>{' '}
+                                                                on this item.
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Section 7: Payment Status (Matches Image 3) */}
+                                                <div className="bg-white border border-[#EAEAEC] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-2">
+                                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                                                        Payment Status
+                                                    </span>
+                                                    <div className="flex items-center gap-2 text-xs font-bold text-gray-800">
+                                                        <span className="w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] font-bold">
+                                                            ✓
+                                                        </span>
+                                                        <span>
+                                                            {detailOrder.paymentStatus === 'Completed' ||
+                                                            detailOrder.paymentMethod.toUpperCase() === 'UPI'
+                                                                ? 'Paid Online (UPI)'
+                                                                : 'Cash on delivery'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Section 8: Updates sent to (Matches Image 4) */}
+                                                <div className="bg-white border border-[#EAEAEC] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3">
+                                                    <div className="flex items-center gap-2.5">
+                                                        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-600">
+                                                            <svg
+                                                                className="w-4 h-4"
+                                                                viewBox="0 0 24 24"
+                                                                fill="none"
+                                                                stroke="currentColor"
+                                                                strokeWidth={2}
+                                                            >
+                                                                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                                                                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                                                            </svg>
+                                                        </div>
+                                                        <h4 className="text-xs sm:text-sm font-bold text-gray-900">
+                                                            Updates sent to
+                                                        </h4>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">
+                                                        <div>
+                                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                                                                Call
+                                                            </span>
+                                                            <p className="text-xs font-bold text-gray-800 mt-0.5">
+                                                                {detailOrder.shippingAddress.phone || user?.phone || '-'}
+                                                            </p>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                                                                Email
+                                                            </span>
+                                                            <p className="text-xs font-bold text-gray-800 mt-0.5 truncate">
+                                                                {user?.email || '-'}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Section 9: Order details (Matches Image 4) */}
+                                                <div className="bg-white border border-[#EAEAEC] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3">
+                                                    <div className="flex items-center gap-2.5">
+                                                        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-600">
+                                                            <svg
+                                                                className="w-4 h-4"
+                                                                viewBox="0 0 24 24"
+                                                                fill="none"
+                                                                stroke="currentColor"
+                                                                strokeWidth={2}
+                                                            >
+                                                                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                                                                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                                                                <line x1="12" y1="22.08" x2="12" y2="12" />
+                                                            </svg>
+                                                        </div>
+                                                        <h4 className="text-xs sm:text-sm font-bold text-gray-900">
+                                                            Order details
+                                                        </h4>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">
+                                                        <div>
+                                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                                                                Ordered On
+                                                            </span>
+                                                            <p className="text-xs font-bold text-gray-800 mt-0.5">
+                                                                {getOrderedDateStr(detailOrder)}
+                                                            </p>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                                                                Order ID
+                                                            </span>
+                                                            <p className="text-xs font-mono font-bold text-gray-800 mt-0.5 truncate">
+                                                                # {detailOrder.orderNumber}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()
+                                ) : (
+                                    <>
+                                        {/* Orders Header with Myntra-style Search & Filter Bar (Screenshot 1) */}
+                                        <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5 shadow-2xs space-y-4">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                        <div>
+                                            <h2 className="text-base sm:text-lg font-bold text-gray-900">All orders</h2>
+                                            <p className="text-xs text-gray-500 font-normal">
+                                                from {selectedTime.toLowerCase()} {filteredCustomerOrders.length > 0 && `(${filteredCustomerOrders.length})`}
+                                            </p>
+                                        </div>
+
+                                        {/* Right: Search Pill & Filters Pill (Matches Screenshot 1) */}
+                                        <div className="flex items-center gap-2">
+                                            {/* Search Pill Input */}
+                                            <div className="relative flex items-center">
+                                                <svg
+                                                    className="w-3.5 h-3.5 text-gray-400 absolute left-3 pointer-events-none"
+                                                    fill="none"
+                                                    viewBox="0 0 24 24"
+                                                    stroke="currentColor"
+                                                    strokeWidth={2}
+                                                >
+                                                    <path
+                                                        strokeLinecap="round"
+                                                        strokeLinejoin="round"
+                                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                                                    />
+                                                </svg>
+                                                <input
+                                                    type="text"
+                                                    value={orderSearch}
+                                                    onChange={(e) => setOrderSearch(e.target.value)}
+                                                    placeholder="Search"
+                                                    className="rounded-full border border-gray-300 bg-white py-1.5 pl-8 pr-7 text-xs text-gray-800 placeholder:text-gray-400 focus:border-[#D26900] focus:outline-none focus:ring-1 focus:ring-[#D26900]/30 w-36 sm:w-48 transition-all"
+                                                />
+                                                {orderSearch && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setOrderSearch('')}
+                                                        className="absolute right-2.5 text-gray-400 hover:text-gray-600 cursor-pointer"
+                                                        title="Clear search"
+                                                    >
+                                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                        </svg>
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {/* Filters Pill Button */}
+                                            <button
+                                                type="button"
+                                                onClick={openFilterModal}
+                                                className={`px-3.5 py-1.5 rounded-full border text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer ${
+                                                    hasActiveFilters
+                                                        ? 'border-[#D26900] bg-orange-50/70 text-[#D26900]'
+                                                        : 'border-gray-300 bg-white hover:border-[#D26900] hover:text-[#D26900] text-gray-700'
+                                                }`}
+                                            >
+                                                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                                                </svg>
+                                                <span>Filters</span>
+                                                {hasActiveFilters && (
+                                                    <span className="w-2 h-2 rounded-full bg-[#D26900]" />
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
-                                <h3 className="text-lg font-bold text-gray-900">No orders placed yet</h3>
-                                <p className="text-xs sm:text-sm text-gray-500 mt-1 max-w-md mx-auto">
-                                    Explore our exclusive collection of cute plush teddy backpacks, school bags, and soft toys.
-                                </p>
-                                <Link
-                                    to="/"
-                                    className="inline-block mt-6 px-8 py-3 bg-[#D26900] hover:bg-[#B45309] text-white font-bold text-xs uppercase tracking-wider rounded-md shadow-xs transition-colors"
-                                >
-                                    START SHOPPING
-                                </Link>
-                            </div>
+
+                                {/* Orders List Content */}
+                                {isOrdersLoading ? (
+                                    <div className="space-y-4">
+                                        {[1, 2].map((n) => (
+                                            <div
+                                                key={n}
+                                                className="bg-white border border-gray-200 rounded-xl p-5 shadow-2xs animate-pulse space-y-4"
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-full bg-gray-200" />
+                                                    <div className="space-y-1.5 flex-1">
+                                                        <div className="h-3.5 bg-gray-200 rounded w-28" />
+                                                        <div className="h-2.5 bg-gray-100 rounded w-48" />
+                                                    </div>
+                                                </div>
+                                                <div className="h-20 bg-gray-50 rounded-lg" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : filteredCustomerOrders.length === 0 ? (
+                                    <div className="bg-white border border-gray-200 rounded-xl p-8 sm:p-12 text-center shadow-2xs">
+                                        <div className="w-20 h-20 rounded-full bg-orange-50 text-[#D26900] flex items-center justify-center mx-auto mb-4">
+                                            <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                    strokeWidth={1.5}
+                                                    d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
+                                                />
+                                            </svg>
+                                        </div>
+                                        <h3 className="text-base sm:text-lg font-bold text-gray-900">
+                                            {orderSearch || hasActiveFilters
+                                                ? 'No orders found matching your filter'
+                                                : 'No orders placed yet'}
+                                        </h3>
+                                        <p className="text-xs sm:text-sm text-gray-500 mt-1 max-w-md mx-auto">
+                                            {orderSearch || hasActiveFilters
+                                                ? 'Try clearing your search query or selecting different filters.'
+                                                : 'Explore our exclusive collection of cute plush teddy backpacks, school bags, and soft toys.'}
+                                        </p>
+                                        <div className="mt-6 flex items-center justify-center gap-3">
+                                            {(orderSearch || hasActiveFilters) && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setOrderSearch('');
+                                                        setSelectedStatus('All');
+                                                        setSelectedTime('Anytime');
+                                                    }}
+                                                    className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+                                                >
+                                                    Clear Filters
+                                                </button>
+                                            )}
+                                            <Link
+                                                to="/"
+                                                className="px-6 py-2.5 bg-[#D26900] hover:bg-[#B45309] text-white font-bold text-xs uppercase tracking-wider rounded-lg shadow-xs transition-colors"
+                                            >
+                                                START SHOPPING
+                                            </Link>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4">
+                                        {filteredCustomerOrders.map((order) => {
+                                            // Separate active items from cancelled items
+                                            const activeItems = order.items
+                                                .map((item, originalIndex) => ({ item, originalIndex }))
+                                                .filter(({ item }) => item.status !== 'Cancelled');
+                                            const cancelledItems = order.items
+                                                .map((item, originalIndex) => ({ item, originalIndex }))
+                                                .filter(({ item }) => item.status === 'Cancelled');
+
+                                            const isOrderFullyCancelled = order.orderStatus === 'Cancelled' || activeItems.length === 0;
+                                            const isDelivered = order.orderStatus === 'Delivered';
+                                            const isConfirmedOrPlaced = ['placed', 'confirmed'].includes(order.orderStatus.toLowerCase());
+                                            const canCancel = ['Placed', 'Confirmed', 'Packed'].includes(order.orderStatus);
+                                            const isCodOrPending =
+                                                order.paymentMethod?.toLowerCase().includes('cod') ||
+                                                order.paymentMethod?.toLowerCase().includes('cash') ||
+                                                order.paymentStatus === 'Pending';
+
+                                            const activeSubtotal = activeItems.reduce(
+                                                (sum, { item }) => sum + item.price * item.quantity,
+                                                0
+                                            );
+
+                                            return (
+                                                <div
+                                                    key={order.id}
+                                                    className="bg-white border border-[#EAEAEC] rounded-2xl p-4 sm:p-5 shadow-2xs space-y-3.5 transition-all text-left"
+                                                >
+                                                    {/* If fully cancelled */}
+                                                    {isOrderFullyCancelled ? (
+                                                        <div className="space-y-3.5">
+                                                            {/* Cancelled Header (Matches Image 1) */}
+                                                            <div className="flex items-start justify-between gap-3 pb-3 border-b border-gray-100">
+                                                                <div className="flex items-start gap-3 min-w-0">
+                                                                    <PackageBoxStatusIcon status="Cancelled" />
+                                                                    <div className="min-w-0">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <h3 className="text-sm sm:text-base font-bold leading-tight text-gray-900">
+                                                                                Cancelled
+                                                                            </h3>
+                                                                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-bold shrink-0">
+                                                                                #{order.orderNumber}
+                                                                            </span>
+                                                                        </div>
+                                                                        <p className="text-xs text-gray-500 mt-0.5 truncate">
+                                                                            {getOrderSubtext(order)}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="text-right shrink-0">
+                                                                    <span className="text-sm font-black text-gray-900 block">
+                                                                        ₹{order.totalAmount.toLocaleString('en-IN')}
+                                                                    </span>
+                                                                    <span className="text-[10px] text-gray-500 font-medium">
+                                                                        {order.paymentMethod}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Cancelled Items List (Matches Image 1 - clean item card, no track/cancel buttons) */}
+                                                            <div className="space-y-3">
+                                                                {order.items.map((item, idx) => (
+                                                                    <div
+                                                                        key={idx}
+                                                                        className="bg-white border border-[#EAEAEC] hover:border-gray-300 rounded-xl overflow-hidden transition-all shadow-2xs"
+                                                                    >
+                                                                        <div
+                                                                            onClick={() => setViewingDetailOrder({ order, itemIndex: idx })}
+                                                                            className="bg-[#FAFAFB] hover:bg-[#F3F4F6] p-3 sm:p-3.5 flex items-center justify-between gap-3 group transition-colors cursor-pointer block"
+                                                                        >
+                                                                            <div className="flex items-center gap-3.5 min-w-0">
+                                                                                {item.primaryImage ? (
+                                                                                    <img
+                                                                                        src={item.primaryImage}
+                                                                                        alt={item.title}
+                                                                                        className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg object-cover bg-white border border-gray-200 shrink-0 shadow-2xs grayscale-20"
+                                                                                    />
+                                                                                ) : (
+                                                                                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg bg-orange-50 border border-orange-200 text-[#D26900] flex items-center justify-center font-bold text-xs shrink-0">
+                                                                                        🧸
+                                                                                    </div>
+                                                                                )}
+
+                                                                                <div className="min-w-0">
+                                                                                    <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wide block">
+                                                                                        {item.brand || 'Y TEDDY'}
+                                                                                    </span>
+                                                                                    <h4 className="font-bold text-xs sm:text-sm text-gray-800 group-hover:text-gray-950 transition-colors truncate">
+                                                                                        {item.title}
+                                                                                    </h4>
+                                                                                    <p className="text-xs text-gray-500 mt-0.5">
+                                                                                        {item.selectedSize
+                                                                                            ? `Size: ${item.selectedSize}`
+                                                                                            : 'Standard Size'}
+                                                                                        {item.selectedColor
+                                                                                            ? ` • Color: ${item.selectedColor}`
+                                                                                            : ''}
+                                                                                        {` • Qty: ${item.quantity}`}
+                                                                                    </p>
+                                                                                    <p className="text-xs font-bold text-gray-700 mt-1">
+                                                                                        ₹{item.price.toLocaleString('en-IN')}
+                                                                                    </p>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            <div className="text-gray-400 group-hover:text-gray-600 group-hover:translate-x-0.5 transition-all shrink-0 pr-1">
+                                                                                <svg
+                                                                                    className="w-4 h-4"
+                                                                                    fill="none"
+                                                                                    viewBox="0 0 24 24"
+                                                                                    stroke="currentColor"
+                                                                                    strokeWidth={2.5}
+                                                                                >
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                                                                </svg>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        /* Active order or partially cancelled order */
+                                                        <div className="space-y-3.5">
+                                                            {/* Confirmed / Active Header (Matches Image 1 with green text) */}
+                                                            <div className="flex items-start justify-between gap-3 pb-3 border-b border-gray-100">
+                                                                <div className="flex items-start gap-3 min-w-0">
+                                                                    <PackageBoxStatusIcon status={isDelivered ? 'Delivered' : 'Confirmed'} />
+                                                                    <div className="min-w-0">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <h3 className="text-sm sm:text-base font-bold leading-tight text-emerald-700">
+                                                                                {isDelivered ? 'Delivered' : 'Confirmed'}
+                                                                            </h3>
+                                                                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-bold shrink-0">
+                                                                                #{order.orderNumber}
+                                                                            </span>
+                                                                        </div>
+                                                                        <p className="text-xs text-gray-500 mt-0.5 truncate">
+                                                                            {getOrderSubtext(order)}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="text-right shrink-0">
+                                                                    <span className="text-sm font-black text-gray-900 block">
+                                                                        ₹{(activeItems.length < order.items.length ? activeSubtotal : order.totalAmount).toLocaleString('en-IN')}
+                                                                    </span>
+                                                                    <span className="text-[10px] text-gray-500 font-medium">
+                                                                        {order.paymentMethod}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Pre-paying Banner (Matches Image 1 reference with lavender bg & brand CTA "Pay Now") */}
+                                                            {!isDelivered && isCodOrPending && (
+                                                                <div className="bg-[#EDE9FE] border border-[#DDD6FE] rounded-2xl p-3 sm:px-4 sm:py-3.5 flex items-center justify-between gap-3 text-xs">
+                                                                    <div className="flex items-center gap-2 min-w-0">
+                                                                        <span className="text-gray-900 font-medium text-xs sm:text-[13px] truncate">
+                                                                            Enjoy hassle-free delivery by pre-paying now.
+                                                                        </span>
+                                                                    </div>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setSelectedPayOrder(order)}
+                                                                        className="px-5 sm:px-6 py-2.5 bg-[#D26900] hover:bg-[#B85800] active:scale-95 text-white font-bold text-xs sm:text-[13px] rounded-xl transition-all shrink-0 shadow-xs cursor-pointer"
+                                                                    >
+                                                                        Pay Now
+                                                                    </button>
+                                                                </div>
+                                                            )}
+
+                                                            {/* Active Items List */}
+                                                            <div className="space-y-3">
+                                                                {activeItems.map(({ item, originalIndex }) => (
+                                                                    <div
+                                                                        key={originalIndex}
+                                                                        className="bg-white border border-[#EAEAEC] hover:border-orange-200 rounded-xl overflow-hidden transition-all shadow-2xs"
+                                                                    >
+                                                                        {/* Clickable Item Preview (Opens Order Details View - Matches Image 1) */}
+                                                                        <div
+                                                                            onClick={() => setViewingDetailOrder({ order, itemIndex: originalIndex })}
+                                                                            className="bg-[#FAFAFB] hover:bg-[#F3F4F6] p-3 sm:p-3.5 flex items-center justify-between gap-3 group transition-colors cursor-pointer border-b border-[#EAEAEC]"
+                                                                        >
+                                                                            <div className="flex items-center gap-3.5 min-w-0">
+                                                                                {item.primaryImage ? (
+                                                                                    <img
+                                                                                        src={item.primaryImage}
+                                                                                        alt={item.title}
+                                                                                        className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg object-cover bg-white border border-gray-200 shrink-0 shadow-2xs"
+                                                                                    />
+                                                                                ) : (
+                                                                                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg bg-orange-50 border border-orange-200 text-[#D26900] flex items-center justify-center font-bold text-xs shrink-0">
+                                                                                        🧸
+                                                                                    </div>
+                                                                                )}
+
+                                                                                <div className="min-w-0">
+                                                                                    <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wide block">
+                                                                                        {item.brand || 'Y TEDDY'}
+                                                                                    </span>
+                                                                                    <h4 className="font-bold text-xs sm:text-sm text-gray-900 group-hover:text-[#D26900] transition-colors truncate">
+                                                                                        {item.title}
+                                                                                    </h4>
+                                                                                    <p className="text-xs text-gray-500 mt-0.5">
+                                                                                        Size: {item.selectedSize || 'L'}
+                                                                                        {item.selectedColor ? ` • Color: ${item.selectedColor}` : ''}
+                                                                                    </p>
+                                                                                    <p className="text-xs font-bold text-gray-900 mt-1">
+                                                                                        ₹{item.price.toLocaleString('en-IN')}
+                                                                                        {item.mrp && item.mrp > item.price && (
+                                                                                            <span className="text-[10px] text-gray-400 line-through font-normal ml-1.5">
+                                                                                                ₹{item.mrp.toLocaleString('en-IN')}
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </p>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            <div className="text-gray-400 group-hover:text-[#D26900] group-hover:translate-x-0.5 transition-all shrink-0 pr-1">
+                                                                                <svg
+                                                                                    className="w-4 h-4"
+                                                                                    fill="none"
+                                                                                    viewBox="0 0 24 24"
+                                                                                    stroke="currentColor"
+                                                                                    strokeWidth={2.5}
+                                                                                >
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                                                                </svg>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* Action Pills Row (Matches Image 1) */}
+                                                                        <div className="p-2.5 sm:p-3 bg-white flex flex-wrap items-center gap-2">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    setSelectedTrackOrder(order);
+                                                                                    setSelectedTrackItem(item);
+                                                                                }}
+                                                                                className="flex-1 min-w-[100px] py-2 px-3 border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-semibold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                                                                            >
+                                                                                <svg
+                                                                                    className="w-4 h-4 text-gray-600"
+                                                                                    viewBox="0 0 24 24"
+                                                                                    fill="none"
+                                                                                    stroke="currentColor"
+                                                                                    strokeWidth={1.8}
+                                                                                    strokeLinecap="round"
+                                                                                    strokeLinejoin="round"
+                                                                                >
+                                                                                    <circle cx="12" cy="12" r="7" />
+                                                                                    <line x1="12" y1="2" x2="12" y2="5" />
+                                                                                    <line x1="12" y1="19" x2="12" y2="22" />
+                                                                                    <line x1="2" y1="12" x2="5" y2="12" />
+                                                                                    <line x1="19" y1="12" x2="22" y2="12" />
+                                                                                    <circle cx="12" cy="12" r="2" fill="currentColor" />
+                                                                                </svg>
+                                                                                <span>Track Item</span>
+                                                                            </button>
+
+                                                                            {canCancel && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleOpenCancelFlow(order, originalIndex)}
+                                                                                    className="flex-1 min-w-[100px] py-2 px-3 border border-gray-200 hover:border-red-300 bg-white hover:bg-red-50/50 text-gray-700 hover:text-red-600 font-semibold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                                                                                >
+                                                                                    <svg
+                                                                                        className="w-4 h-4 text-gray-500"
+                                                                                        viewBox="0 0 24 24"
+                                                                                        fill="none"
+                                                                                        stroke="currentColor"
+                                                                                        strokeWidth={2}
+                                                                                        strokeLinecap="round"
+                                                                                        strokeLinejoin="round"
+                                                                                    >
+                                                                                        <circle cx="12" cy="12" r="9" />
+                                                                                        <line x1="15" y1="9" x2="9" y2="15" />
+                                                                                        <line x1="9" y1="9" x2="15" y2="15" />
+                                                                                    </svg>
+                                                                                    <span>Cancel Item</span>
+                                                                                </button>
+                                                                            )}
+
+                                                                            <Link
+                                                                                to={`/help?order=${order.orderNumber}`}
+                                                                                className="flex-1 min-w-[100px] py-2 px-3 border border-gray-200 hover:border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-semibold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                                                                            >
+                                                                                <svg
+                                                                                    className="w-4 h-4 text-gray-600"
+                                                                                    viewBox="0 0 24 24"
+                                                                                    fill="none"
+                                                                                    stroke="currentColor"
+                                                                                    strokeWidth={1.8}
+                                                                                    strokeLinecap="round"
+                                                                                    strokeLinejoin="round"
+                                                                                >
+                                                                                    <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
+                                                                                    <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
+                                                                                </svg>
+                                                                                <span>Need Help?</span>
+                                                                            </Link>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+
+                                                            {/* If this order has partially cancelled items (Matches Image 1 Cancelled Block) */}
+                                                            {cancelledItems.length > 0 && (
+                                                                <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+                                                                    <div className="flex items-start gap-3">
+                                                                        <PackageBoxStatusIcon status="Cancelled" />
+                                                                        <div className="min-w-0">
+                                                                            <h3 className="text-sm sm:text-base font-bold leading-tight text-gray-900">
+                                                                                Cancelled
+                                                                            </h3>
+                                                                            <p className="text-xs text-gray-500 mt-0.5 truncate">
+                                                                                {getItemCancelSubtext(cancelledItems[0].item, order)}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="space-y-3">
+                                                                        {cancelledItems.map(({ item, originalIndex }) => (
+                                                                            <div
+                                                                                key={originalIndex}
+                                                                                className="bg-white border border-[#EAEAEC] hover:border-gray-300 rounded-xl overflow-hidden transition-all shadow-2xs"
+                                                                            >
+                                                                                <div
+                                                                                    onClick={() => setViewingDetailOrder({ order, itemIndex: originalIndex })}
+                                                                                    className="bg-[#FAFAFB] hover:bg-[#F3F4F6] p-3 sm:p-3.5 flex items-center justify-between gap-3 group transition-colors cursor-pointer block"
+                                                                                >
+                                                                                    <div className="flex items-center gap-3.5 min-w-0">
+                                                                                        {item.primaryImage ? (
+                                                                                            <img
+                                                                                                src={item.primaryImage}
+                                                                                                alt={item.title}
+                                                                                                className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg object-cover bg-white border border-gray-200 shrink-0 shadow-2xs grayscale-20"
+                                                                                            />
+                                                                                        ) : (
+                                                                                            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-lg bg-orange-50 border border-orange-200 text-[#D26900] flex items-center justify-center font-bold text-xs shrink-0">
+                                                                                                🧸
+                                                                                            </div>
+                                                                                        )}
+
+                                                                                        <div className="min-w-0">
+                                                                                            <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wide block">
+                                                                                                {item.brand || 'Y TEDDY'}
+                                                                                            </span>
+                                                                                            <h4 className="font-bold text-xs sm:text-sm text-gray-800 group-hover:text-gray-950 transition-colors truncate">
+                                                                                                {item.title}
+                                                                                            </h4>
+                                                                                            <p className="text-xs text-gray-500 mt-0.5">
+                                                                                                {item.selectedSize
+                                                                                            ? `Size: ${item.selectedSize}`
+                                                                                            : 'Standard Size'}
+                                                                                                {item.selectedColor
+                                                                                            ? ` • Color: ${item.selectedColor}`
+                                                                                            : ''}
+                                                                                                {` • Qty: ${item.quantity}`}
+                                                                                            </p>
+                                                                                            <p className="text-xs font-bold text-gray-700 mt-1">
+                                                                                                ₹{item.price.toLocaleString('en-IN')}
+                                                                                            </p>
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    <div className="text-gray-400 group-hover:text-gray-600 transition-all shrink-0 pr-1">
+                                                                                        <svg
+                                                                                            className="w-4 h-4"
+                                                                                            fill="none"
+                                                                                            viewBox="0 0 24 24"
+                                                                                            stroke="currentColor"
+                                                                                            strokeWidth={2.5}
+                                                                                        >
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                                                                        </svg>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Delivery Address & Courier Status Summary */}
+                                                    <div className="text-xs text-gray-600 bg-gray-50/70 border border-gray-100 rounded-lg p-2.5 sm:p-3 space-y-1">
+                                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                                            <p className="font-medium text-[11px] sm:text-xs">
+                                                                <span className="font-bold text-gray-800">
+                                                                    Delivering to:
+                                                                </span>{' '}
+                                                                {order.shippingAddress.name},{' '}
+                                                                {order.shippingAddress.address},{' '}
+                                                                {order.shippingAddress.city} -{' '}
+                                                                {order.shippingAddress.pincode}
+                                                            </p>
+                                                            {order.delhiveryWaybill ? (
+                                                                <span className="text-[11px] font-bold text-amber-900 bg-amber-50 px-2.5 py-0.5 rounded-md border border-amber-200 flex items-center gap-1.5">
+                                                                    <span>🚚</span>
+                                                                    <span>
+                                                                        Delhivery AWB #{order.delhiveryWaybill}
+                                                                    </span>
+                                                                    {order.estimatedDeliveryDate && (
+                                                                        <span className="text-[10px] text-amber-700 font-semibold">
+                                                                            • Est. {order.estimatedDeliveryDate}
+                                                                        </span>
+                                                                    )}
+                                                                </span>
+                                                            ) : null}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </>
                         )}
+                    </div>
+                )}
                     </main>
                 </div>
             </div>
 
             {/* ======================================================== */}
-            {/* ADDRESS MODAL (Add / Edit Address) */}
-            {/* Matches Myntra reference styling with Brand Color CTA */}
+            {/* MYNTRA-STYLE 2-COLUMN FILTERS MODAL (Screenshots 2 & 3) */}
+            {/* Uses Website Brand CTA Color #D26900 */}
             {/* ======================================================== */}
-            {isAddressModalOpen && (
-                <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-xs">
-                    <div className="bg-white rounded-lg shadow-2xl max-w-[460px] w-full overflow-hidden flex flex-col text-left animate-in fade-in zoom-in-95 duration-200">
+            {isFilterModalOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs select-none"
+                    onClick={() => setIsFilterModalOpen(false)}
+                >
+                    <div
+                        className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-200 animate-in fade-in zoom-in-95 duration-150"
+                        onClick={(e) => e.stopPropagation()}
+                    >
                         {/* Modal Header */}
-                        <div className="flex items-center justify-between px-6 sm:px-7 py-4 border-b border-gray-200 bg-white">
-                            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#282C3F]">
-                                {editingAddressId ? 'EDIT ADDRESS' : 'ADD NEW ADDRESS'}
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                            <h3 className="text-base sm:text-lg font-bold text-gray-900">Filters</h3>
+                            <div className="flex items-center gap-4">
+                                <button
+                                    type="button"
+                                    onClick={handleClearFilters}
+                                    className="text-xs font-bold text-[#D26900] hover:text-[#B85800] transition-colors cursor-pointer"
+                                >
+                                    Clear All
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsFilterModalOpen(false)}
+                                    className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-100 text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
+                                    aria-label="Close"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Modal Body: 2 Columns */}
+                        <div className="flex min-h-[260px] sm:min-h-[290px]">
+                            {/* Left Tabs Column */}
+                            <div className="w-32 sm:w-40 border-r border-gray-100 bg-[#F9FAFB]/80 p-2 space-y-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setFilterModalTab('status')}
+                                    className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-xs font-bold text-left transition-colors cursor-pointer ${
+                                        filterModalTab === 'status'
+                                            ? 'bg-white text-[#D26900] shadow-2xs border-l-3 border-[#D26900]'
+                                            : 'text-gray-600 hover:bg-gray-100'
+                                    }`}
+                                >
+                                    <svg className="w-4 h-4 text-[#D26900] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                                    </svg>
+                                    <span>Status</span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setFilterModalTab('time')}
+                                    className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-xs font-bold text-left transition-colors cursor-pointer ${
+                                        filterModalTab === 'time'
+                                            ? 'bg-white text-[#D26900] shadow-2xs border-l-3 border-[#D26900]'
+                                            : 'text-gray-600 hover:bg-gray-100'
+                                    }`}
+                                >
+                                    <svg className="w-4 h-4 text-[#D26900] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                                    </svg>
+                                    <span>Time</span>
+                                </button>
+                            </div>
+
+                            {/* Right Options Column */}
+                            <div className="flex-1 p-5 overflow-y-auto">
+                                {filterModalTab === 'status' ? (
+                                    <div>
+                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-3">
+                                            ORDER STATUS
+                                        </span>
+                                        <div className="space-y-1">
+                                            {['All', 'On the way', 'Delivered', 'Cancelled', 'Returned'].map((st) => (
+                                                <FilterRadioOption
+                                                    key={st}
+                                                    label={st}
+                                                    selected={tempStatus === st}
+                                                    onSelect={() => setTempStatus(st)}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-3">
+                                            ORDER TIME
+                                        </span>
+                                        <div className="space-y-1">
+                                            {['Anytime', 'Last 30 days', 'Last 6 months', 'Last year'].map((tm) => (
+                                                <FilterRadioOption
+                                                    key={tm}
+                                                    label={tm}
+                                                    selected={tempTime === tm}
+                                                    onSelect={() => setTempTime(tm)}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Modal Footer CTA */}
+                        <div className="p-4 border-t border-gray-100 bg-white">
+                            <button
+                                type="button"
+                                onClick={handleApplyFilters}
+                                className="w-full py-3 bg-[#D26900] hover:bg-[#B85800] text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-xs transition-colors cursor-pointer"
+                            >
+                                Show Results
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ======================================================== */}
+            {/* ADDRESS MODAL (Add / Edit Address) */}
+            {/* Shared component matching reference styling */}
+            {/* ======================================================== */}
+            <AddressModal
+                isOpen={isAddressModalOpen}
+                editingAddress={editingAddressId ? addresses.find((a) => a.id === editingAddressId) : null}
+                onClose={() => setIsAddressModalOpen(false)}
+            />
+
+            {/* ======================================================== */}
+            {/* CENTERED TRACKING MODAL POPUP                            */}
+            {/* Matches user requirement: "traked ka pop dikahw clik krega to center me" */}
+            {/* ======================================================== */}
+            {/* ======================================================== */}
+            {/* CENTERED TRACK ITEM MODAL POPUP (Matches Image 2 Exactly) */}
+            {/* ======================================================== */}
+            {selectedTrackOrder && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto space-y-4 text-left font-sans">
+                        {/* Header: Track item and close button (Matches Image 2) */}
+                        <div className="flex items-center justify-between pb-1">
+                            <h3 className="text-base sm:text-lg font-bold text-gray-900 tracking-tight">
+                                Track item
                             </h3>
                             <button
                                 type="button"
-                                onClick={() => setIsAddressModalOpen(false)}
-                                className="text-gray-400 hover:text-gray-700 text-lg font-bold cursor-pointer transition-colors p-1 leading-none"
-                                aria-label="Close"
+                                onClick={() => {
+                                    setSelectedTrackOrder(null);
+                                    setSelectedTrackItem(null);
+                                }}
+                                className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-800 flex items-center justify-center text-sm font-bold transition-colors cursor-pointer"
                             >
                                 ✕
                             </button>
                         </div>
 
-                        {/* Modal Form */}
-                        <form onSubmit={handleSaveAddress} className="flex flex-col flex-1">
-                            <div className="px-6 sm:px-7 py-5 space-y-4 overflow-y-auto max-h-[72vh]">
-                                {/* Contact Details */}
-                                <div className="space-y-4">
-                                    <div className="relative border-b border-gray-300 focus-within:border-[#D26900] transition-colors pb-0.5">
-                                        <label className="text-[11px] sm:text-xs text-gray-500 font-medium block">
-                                            Name *
-                                        </label>
-                                        <input
-                                            type="text"
-                                            required
-                                            value={addressForm.name}
-                                            onChange={(e) =>
-                                                setAddressForm((prev) => ({ ...prev, name: e.target.value }))
-                                            }
-                                            className="w-full bg-transparent text-sm font-medium text-gray-900 outline-none pt-1 pb-1.5"
+                        {/* Top Card: In This Delivery Item Preview (Matches Image 2) */}
+                        {(() => {
+                            const targetItem = selectedTrackItem || selectedTrackOrder.items[0];
+                            const totalItemCount = selectedTrackItem
+                                ? selectedTrackItem.quantity
+                                : selectedTrackOrder.items.reduce((s, it) => s + it.quantity, 0);
+
+                            return (
+                                <div className="border border-gray-200 rounded-2xl p-3.5 sm:p-4 bg-white flex items-center gap-3.5 shadow-2xs">
+                                    {targetItem?.primaryImage ? (
+                                        <img
+                                            src={targetItem.primaryImage}
+                                            alt={targetItem.title}
+                                            className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl object-cover bg-gray-50 border border-gray-200 shrink-0"
                                         />
-                                    </div>
-
-                                    <div className="relative border-b border-gray-300 focus-within:border-[#D26900] transition-colors pb-0.5">
-                                        <label className="text-[11px] sm:text-xs text-gray-500 font-medium block">
-                                            Mobile *
-                                        </label>
-                                        <input
-                                            type="tel"
-                                            required
-                                            value={addressForm.mobile}
-                                            onChange={(e) =>
-                                                setAddressForm((prev) => ({ ...prev, mobile: e.target.value }))
-                                            }
-                                            className="w-full bg-transparent text-sm font-medium text-gray-900 outline-none pt-1 pb-1.5 font-mono"
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Section Separator Band (Thick Grey Strip matching reference) */}
-                                <div className="-mx-6 sm:-mx-7 h-2.5 bg-[#F5F5F6] border-y border-gray-200/70 my-3.5" />
-
-                                {/* Address Details */}
-                                <div className="space-y-4">
-                                    {/* Pincode & State side-by-side */}
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="relative border-b border-gray-300 focus-within:border-[#D26900] transition-colors pb-0.5">
-                                            <label className="text-[11px] sm:text-xs text-gray-500 font-medium block">
-                                                Pincode *
-                                            </label>
-                                            <input
-                                                type="text"
-                                                required
-                                                value={addressForm.pincode}
-                                                onChange={(e) =>
-                                                    setAddressForm((prev) => ({ ...prev, pincode: e.target.value }))
-                                                }
-                                                className="w-full bg-transparent text-sm font-medium text-gray-900 outline-none pt-1 pb-1.5 font-mono"
-                                            />
-                                        </div>
-
-                                        <div className="relative border-b border-gray-300 focus-within:border-[#D26900] transition-colors pb-0.5">
-                                            <label className="text-[11px] sm:text-xs text-gray-500 font-medium block">
-                                                State *
-                                            </label>
-                                            <input
-                                                type="text"
-                                                required
-                                                value={addressForm.state}
-                                                onChange={(e) =>
-                                                    setAddressForm((prev) => ({ ...prev, state: e.target.value }))
-                                                }
-                                                className="w-full bg-transparent text-sm font-medium text-gray-900 outline-none pt-1 pb-1.5"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* House Number/Tower/Block * */}
-                                    <div className="relative border-b border-gray-300 focus-within:border-[#D26900] transition-colors pb-0.5">
-                                        <label className="text-[11px] sm:text-xs text-gray-500 font-medium block">
-                                            House Number/Tower/Block *
-                                        </label>
-                                        <input
-                                            type="text"
-                                            required
-                                            value={addressForm.houseNo}
-                                            onChange={(e) =>
-                                                setAddressForm((prev) => ({ ...prev, houseNo: e.target.value }))
-                                            }
-                                            className="w-full bg-transparent text-sm font-medium text-gray-900 outline-none pt-1 pb-1.5"
-                                        />
-                                    </div>
-
-                                    {/* Address (Building, Street, Area) * */}
-                                    <div className="relative border-b border-gray-300 focus-within:border-[#D26900] transition-colors pb-0.5">
-                                        <label className="text-[11px] sm:text-xs text-gray-500 font-medium block">
-                                            Address (Building, Street, Area) *
-                                        </label>
-                                        <input
-                                            type="text"
-                                            required
-                                            value={addressForm.street}
-                                            onChange={(e) =>
-                                                setAddressForm((prev) => ({ ...prev, street: e.target.value }))
-                                            }
-                                            className="w-full bg-transparent text-sm font-medium text-gray-900 outline-none pt-1 pb-1.5"
-                                        />
-                                    </div>
-
-                                    {/* Locality/ Town * */}
-                                    <div className="relative border-b border-gray-300 focus-within:border-[#D26900] transition-colors pb-0.5">
-                                        <label className="text-[11px] sm:text-xs text-gray-500 font-medium block">
-                                            Locality/ Town *
-                                        </label>
-                                        <input
-                                            type="text"
-                                            required
-                                            value={addressForm.locality}
-                                            onChange={(e) =>
-                                                setAddressForm((prev) => ({ ...prev, locality: e.target.value }))
-                                            }
-                                            className="w-full bg-transparent text-sm font-medium text-gray-900 outline-none pt-1 pb-1.5"
-                                        />
-                                    </div>
-
-                                    {/* City/ District * */}
-                                    <div className="relative border-b border-gray-300 focus-within:border-[#D26900] transition-colors pb-0.5">
-                                        <label className="text-[11px] sm:text-xs text-gray-500 font-medium block">
-                                            City/ District *
-                                        </label>
-                                        <input
-                                            type="text"
-                                            required
-                                            value={addressForm.city}
-                                            onChange={(e) =>
-                                                setAddressForm((prev) => ({ ...prev, city: e.target.value }))
-                                            }
-                                            className="w-full bg-transparent text-sm font-medium text-gray-900 outline-none pt-1 pb-1.5"
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Section Separator Band */}
-                                <div className="-mx-6 sm:-mx-7 h-2.5 bg-[#F5F5F6] border-y border-gray-200/70 my-3.5" />
-
-                                {/* Type of Address */}
-                                <div className="space-y-4 pt-1">
-                                    <div>
-                                        <label className="text-[11px] sm:text-xs text-gray-500 font-medium block mb-2.5">
-                                            Type of Address *
-                                        </label>
-                                        <div className="flex items-center gap-7">
-                                            <CustomRadio
-                                                name="addressType"
-                                                label="Home"
-                                                checked={addressForm.type === 'HOME'}
-                                                onChange={() =>
-                                                    setAddressForm((prev) => ({
-                                                        ...prev,
-                                                        type: 'HOME',
-                                                        openOnSaturday: false,
-                                                        openOnSunday: false,
-                                                    }))
-                                                }
-                                            />
-                                            <CustomRadio
-                                                name="addressType"
-                                                label="Office"
-                                                checked={addressForm.type === 'OFFICE'}
-                                                onChange={() =>
-                                                    setAddressForm((prev) => ({ ...prev, type: 'OFFICE' }))
-                                                }
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* Weekend Delivery options (Shown when Office is selected, matching reference screenshot) */}
-                                    {addressForm.type === 'OFFICE' && (
-                                        <div className="space-y-2.5 pt-1 animate-in fade-in duration-150">
-                                            <p className="text-[11px] sm:text-xs text-gray-500 font-medium">
-                                                Is your office open on weekends?
-                                            </p>
-                                            <div className="space-y-2 pl-0.5">
-                                                <CustomCheckbox
-                                                    id="openSaturday"
-                                                    label="Open on Saturday"
-                                                    checked={addressForm.openOnSaturday}
-                                                    onChange={(val) =>
-                                                        setAddressForm((prev) => ({
-                                                            ...prev,
-                                                            openOnSaturday: val,
-                                                        }))
-                                                    }
-                                                />
-                                                <CustomCheckbox
-                                                    id="openSunday"
-                                                    label="Open on Sunday"
-                                                    checked={addressForm.openOnSunday}
-                                                    onChange={(val) =>
-                                                        setAddressForm((prev) => ({
-                                                            ...prev,
-                                                            openOnSunday: val,
-                                                        }))
-                                                    }
-                                                />
-                                            </div>
+                                    ) : (
+                                        <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-orange-50 border border-orange-200 text-[#D26900] flex items-center justify-center text-xl shrink-0">
+                                            🧸
                                         </div>
                                     )}
-
-                                    {/* Divider line before default address option matching screenshot */}
-                                    <div className="border-t border-gray-200/80 pt-3">
-                                        <CustomCheckbox
-                                            id="makeDefault"
-                                            label="Make this as my default address"
-                                            checked={addressForm.isDefault}
-                                            onChange={(val) =>
-                                                setAddressForm((prev) => ({ ...prev, isDefault: val }))
-                                            }
-                                        />
+                                    <div className="min-w-0 flex-1">
+                                        <span className="text-xs text-gray-500 font-medium block">
+                                            In This Delivery
+                                        </span>
+                                        <span className="text-base sm:text-lg font-extrabold text-gray-900 block leading-tight mt-0.5">
+                                            {totalItemCount} Item{totalItemCount > 1 ? 's' : ''}
+                                        </span>
+                                        {targetItem && (
+                                            <p className="text-xs text-gray-600 truncate mt-0.5">
+                                                {targetItem.title}
+                                                {targetItem.selectedSize ? ` • Size: ${targetItem.selectedSize}` : ''}
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
-                            </div>
+                            );
+                        })()}
 
-                            {/* Modal Split Footer CTA (Matches Screenshot with Brand Orange CTA) */}
-                            <div className="grid grid-cols-2 border-t border-gray-200 mt-auto shrink-0">
-                                <button
-                                    type="button"
-                                    onClick={() => setIsAddressModalOpen(false)}
-                                    className="py-4 text-center font-bold text-xs uppercase tracking-wider text-gray-700 bg-white hover:bg-gray-50 transition-colors border-r border-gray-200 cursor-pointer"
-                                >
-                                    CANCEL
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={saving}
-                                    className="py-4 text-center font-bold text-xs uppercase tracking-wider text-white bg-gradient-to-r from-[#D26900] to-[#E65100] hover:from-[#B45309] hover:to-[#D26900] transition-all cursor-pointer disabled:opacity-50 shadow-xs"
-                                >
-                                    {saving ? 'SAVING...' : 'SAVE'}
-                                </button>
-                            </div>
-                        </form>
+                        {/* Bottom Card: Vertical Stepper (Matches Image 2 Exactly) */}
+                        {(() => {
+                            const status = selectedTrackOrder.orderStatus;
+                            const isShipped = ['Shipped', 'Out for Delivery', 'Delivered'].includes(status);
+                            const isDelivered = status === 'Delivered';
+
+                            // Order placed time (e.g. 07:25 PM)
+                            const orderDate = new Date(selectedTrackOrder.createdAt || Date.now());
+                            const orderTimeStr = orderDate.toLocaleTimeString('en-IN', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: true,
+                            });
+
+                            // Shipped expected date (e.g. Expected by Sun, 18 Oct)
+                            const shipDate = new Date(orderDate);
+                            shipDate.setDate(shipDate.getDate() + 2);
+                            const shippedDateStr = shipDate.toLocaleDateString('en-IN', {
+                                weekday: 'short',
+                                day: 'numeric',
+                                month: 'short',
+                            });
+
+                            // Arriving date range (e.g. 20 Oct - 22 Oct)
+                            const minD = new Date(orderDate);
+                            minD.setDate(minD.getDate() + 4);
+                            const maxD = new Date(orderDate);
+                            maxD.setDate(maxD.getDate() + 6);
+                            const arrivingRangeStr = `${minD.getDate()} ${minD.toLocaleString('en-IN', { month: 'short' })} - ${maxD.getDate()} ${maxD.toLocaleString('en-IN', { month: 'short' })}`;
+
+                            return (
+                                <div className="border border-gray-200 rounded-2xl p-4 sm:p-5 bg-white shadow-2xs space-y-0">
+                                    {/* Step 1: Order Placed */}
+                                    <div className="flex items-start gap-3 relative">
+                                        <div className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                            </svg>
+                                        </div>
+
+                                        <div className="flex-1 flex items-center justify-between min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="font-bold text-xs sm:text-sm text-gray-900">
+                                                    Order Placed
+                                                </span>
+                                                <svg className="w-3.5 h-3.5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                                </svg>
+                                            </div>
+                                            <span className="text-xs text-gray-500 font-medium">
+                                                {orderTimeStr}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Connector Line 1 */}
+                                    <div className="ml-[9px] w-0.5 h-7 border-l-2 border-dashed border-emerald-400 my-0.5" />
+
+                                    {/* Step 2: Shipped */}
+                                    <div className="flex items-start gap-3 relative">
+                                        {isShipped ? (
+                                            <div className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                </svg>
+                                            </div>
+                                        ) : (
+                                            <div className="w-5 h-5 rounded-full border-2 border-gray-300 bg-white shrink-0 mt-0.5" />
+                                        )}
+
+                                        <div className="flex-1 min-w-0">
+                                            <span className="font-bold text-xs sm:text-sm text-gray-900 block leading-tight">
+                                                Shipped
+                                            </span>
+                                            <span className="text-xs text-gray-500 block mt-0.5">
+                                                {isShipped
+                                                    ? `Shipped via ${selectedTrackOrder.courierPartner || 'Delhivery Express'}`
+                                                    : `Expected by ${shippedDateStr}`}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Connector Line 2 */}
+                                    <div
+                                        className={`ml-[9px] w-0.5 h-7 border-l-2 border-dashed my-0.5 ${
+                                            isDelivered ? 'border-emerald-400' : 'border-gray-200'
+                                        }`}
+                                    />
+
+                                    {/* Step 3: Arriving / Delivered */}
+                                    <div className="flex items-start gap-3 relative">
+                                        {isDelivered ? (
+                                            <div className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                </svg>
+                                            </div>
+                                        ) : (
+                                            <div className="w-5 h-5 rounded-full border-2 border-gray-300 bg-white shrink-0 mt-0.5" />
+                                        )}
+
+                                        <div className="flex-1 min-w-0">
+                                            <span className="font-bold text-xs sm:text-sm text-gray-900 block leading-tight">
+                                                {isDelivered ? 'Delivered' : 'Arriving'}
+                                            </span>
+                                            <span className="text-xs font-bold text-emerald-600 block mt-0.5">
+                                                {isDelivered
+                                                    ? 'Delivered to your address'
+                                                    : `Expected by ${selectedTrackOrder.estimatedDeliveryDate || arrivingRangeStr}`}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        {/* Delivering to footer */}
+                        <div className="text-xs text-gray-600 bg-gray-50/80 border border-gray-100 rounded-xl p-3">
+                            <span className="font-bold text-gray-800">Delivering to:</span>{' '}
+                            {selectedTrackOrder.shippingAddress.name},{' '}
+                            {selectedTrackOrder.shippingAddress.address},{' '}
+                            {selectedTrackOrder.shippingAddress.city} -{' '}
+                            {selectedTrackOrder.shippingAddress.pincode}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ======================================================== */}
+            {/* CENTERED PRE-PAY MODAL POPUP                             */}
+            {/* Matches user requirement: "pay now bhi"                  */}
+            {/* ======================================================== */}
+            {selectedPayOrder && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none">
+                    <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl relative text-center space-y-4 font-sans animate-in fade-in zoom-in-95 duration-150">
+                        <button
+                            type="button"
+                            onClick={() => setSelectedPayOrder(null)}
+                            className="absolute top-4 right-4 w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-800 flex items-center justify-center text-xs font-bold transition-colors cursor-pointer"
+                        >
+                            ✕
+                        </button>
+
+                        <div className="space-y-1 text-center">
+                            <span className="text-[10px] font-bold text-[#D26900] tracking-wider uppercase bg-orange-50 px-2.5 py-1 rounded-full border border-orange-200">
+                                Pre-Pay For Hassle-Free Delivery
+                            </span>
+                            <h3 className="text-xl font-black text-gray-900 pt-1">
+                                ₹{selectedPayOrder.totalAmount.toLocaleString('en-IN')}
+                            </h3>
+                            <p className="text-xs text-gray-500 font-mono">
+                                Order #{selectedPayOrder.orderNumber}
+                            </p>
+                        </div>
+
+                        {/* Simulated UPI QR Canvas */}
+                        <div className="p-3 bg-white border border-gray-200 rounded-xl inline-block shadow-inner mx-auto">
+                            <svg className="w-40 h-40 mx-auto" viewBox="0 0 100 100">
+                                <rect width="100" height="100" fill="#FFFFFF" />
+                                <rect x="10" y="10" width="24" height="24" fill="#1F2937" rx="2" />
+                                <rect x="14" y="14" width="16" height="16" fill="#FFFFFF" rx="1" />
+                                <rect x="18" y="18" width="8" height="8" fill="#D26900" rx="1" />
+                                <rect x="66" y="10" width="24" height="24" fill="#1F2937" rx="2" />
+                                <rect x="70" y="14" width="16" height="16" fill="#FFFFFF" rx="1" />
+                                <rect x="74" y="18" width="8" height="8" fill="#D26900" rx="1" />
+                                <rect x="10" y="66" width="24" height="24" fill="#1F2937" rx="2" />
+                                <rect x="14" y="70" width="16" height="16" fill="#FFFFFF" rx="1" />
+                                <rect x="18" y="74" width="8" height="8" fill="#D26900" rx="1" />
+                                <rect x="42" y="12" width="6" height="6" fill="#D26900" />
+                                <rect x="52" y="12" width="6" height="6" fill="#1F2937" />
+                                <rect x="42" y="24" width="6" height="6" fill="#1F2937" />
+                                <rect x="52" y="24" width="6" height="6" fill="#D26900" />
+                                <rect x="12" y="42" width="6" height="6" fill="#1F2937" />
+                                <rect x="24" y="42" width="6" height="6" fill="#D26900" />
+                                <rect x="36" y="42" width="10" height="10" fill="#1F2937" />
+                                <rect x="52" y="42" width="8" height="8" fill="#D26900" />
+                                <rect x="66" y="42" width="8" height="8" fill="#1F2937" />
+                                <rect x="80" y="42" width="6" height="6" fill="#1F2937" />
+                                <rect x="42" y="56" width="6" height="6" fill="#1F2937" />
+                                <rect x="56" y="56" width="8" height="8" fill="#D26900" />
+                                <rect x="70" y="56" width="6" height="6" fill="#1F2937" />
+                                <rect x="42" y="68" width="8" height="8" fill="#D26900" />
+                                <rect x="56" y="68" width="6" height="6" fill="#1F2937" />
+                                <rect x="70" y="68" width="8" height="8" fill="#D26900" />
+                                <rect x="42" y="80" width="8" height="8" fill="#1F2937" />
+                                <rect x="56" y="80" width="8" height="8" fill="#D26900" />
+                                <rect x="70" y="80" width="12" height="12" fill="#1F2937" />
+                            </svg>
+                        </div>
+
+                        <div className="flex items-center justify-center gap-2 text-[11px] text-gray-500 font-medium">
+                            <span>Google Pay</span>
+                            <span>•</span>
+                            <span>PhonePe</span>
+                            <span>•</span>
+                            <span>Paytm</span>
+                            <span>•</span>
+                            <span>BHIM UPI</span>
+                        </div>
+
+                        <button
+                            type="button"
+                            disabled={isPayingNow}
+                            onClick={handleConfirmPrePay}
+                            className="w-full py-3 bg-[#D26900] hover:bg-[#B85800] disabled:bg-gray-400 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
+                        >
+                            {isPayingNow ? (
+                                <span>Processing Payment...</span>
+                            ) : (
+                                <>
+                                    <span>Confirm Payment (₹{selectedPayOrder.totalAmount.toLocaleString('en-IN')})</span>
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                                    </svg>
+                                </>
+                            )}
+                        </button>
                     </div>
                 </div>
             )}

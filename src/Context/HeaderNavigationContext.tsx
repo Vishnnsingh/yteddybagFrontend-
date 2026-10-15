@@ -407,18 +407,15 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
   const isBgThemeFetchingRef = React.useRef(false);
 
   // Fetch Background Theme (Desktop & Mobile Cloud Doodles)
+  // Fetch Background Theme (Desktop & Mobile Cloud Doodles) with persistent localStorage cache
   const refreshBgTheme = useCallback(async (force = false): Promise<BgThemeConfig | null> => {
-    // If not forcing fresh data, check if we have a valid non-expired cache in localStorage
+    // If not forcing fresh data, check if we have a valid cache in localStorage
     if (!force && typeof window !== 'undefined') {
       try {
         const cached = getBgThemeFromCache();
-        const cachedTime = localStorage.getItem(BG_THEME_TIMESTAMP_KEY);
-        if (cached && cachedTime) {
-          const age = Date.now() - parseInt(cachedTime, 10);
-          if (age < BG_THEME_CACHE_DURATION) {
-            setBgTheme(cached);
-            return cached;
-          }
+        if (cached) {
+          setBgTheme(cached);
+          return cached;
         }
       } catch (_) {}
     }
@@ -443,12 +440,12 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
     return null;
   }, []);
 
-  // Fetch active header items for customer website with localStorage cache
+  // Fetch active header items for customer website with persistent localStorage cache
   const refreshHeaderItems = useCallback(async (force = false) => {
     if (!force) {
       const cached = getHeaderItemsFromCache();
       if (cached && cached.length > 0) {
-        setHeaderItems((prev) => (prev.length === 0 ? cached : prev));
+        setHeaderItems(cached);
         return;
       }
     }
@@ -475,12 +472,15 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
     }
   }, []);
 
-  // Fetch all header items for Admin Dashboard with localStorage cache
+  // Fetch all header items for Admin Dashboard (strictly on-demand when on /dashboard routes)
   const refreshAdminItems = useCallback(async (force = false) => {
+    const isAdmin = typeof window !== 'undefined' && window.location.pathname.startsWith('/dashboard');
+    if (!isAdmin) return; // Never call admin APIs on customer-facing pages
+
     if (!force) {
       const cached = getAdminItemsFromCache();
       if (cached && cached.length > 0) {
-        setAdminItems((prev) => (prev.length === 0 ? cached : prev));
+        setAdminItems(cached);
         return;
       }
     }
@@ -506,7 +506,7 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
     }
   }, []);
 
-  // Initial fetch for client header and background theme
+  // Initial fetch for client header and background theme (only hits API if not in localStorage)
   useEffect(() => {
     refreshHeaderItems(false);
     refreshBgTheme(false);
@@ -517,18 +517,15 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
     const handleBroadcast = (event: MessageEvent) => {
       if (event.data?.type === 'HEADER_NAV_CHANGED') {
         refreshHeaderItems(true);
-        refreshAdminItems(true);
+        if (typeof window !== 'undefined' && window.location.pathname.startsWith('/dashboard')) {
+          refreshAdminItems(true);
+        }
         refreshSitePages(true);
         if (event.data?.bgTheme) {
           setBgTheme(event.data.bgTheme);
           saveBgThemeToCache(event.data.bgTheme);
         } else {
-          const cached = getBgThemeFromCache();
-          if (cached) {
-            setBgTheme(cached);
-          } else {
-            refreshBgTheme(false);
-          }
+          refreshBgTheme(true);
         }
       }
     };
@@ -541,7 +538,9 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
     const handleStorage = (event: StorageEvent) => {
       if (event.key === STORAGE_SYNC_KEY || event.key === BG_THEME_STORAGE_KEY) {
         refreshHeaderItems(true);
-        refreshAdminItems(true);
+        if (typeof window !== 'undefined' && window.location.pathname.startsWith('/dashboard')) {
+          refreshAdminItems(true);
+        }
         refreshSitePages(true);
         const cached = getBgThemeFromCache();
         if (cached) {
@@ -551,27 +550,11 @@ export const HeaderNavigationProvider: React.FC<{ children: React.ReactNode }> =
     };
     window.addEventListener('storage', handleStorage);
 
-    // Auto-sync only when switching back to this tab if cache has actually expired
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        const cachedNav = getHeaderItemsFromCache();
-        if (!cachedNav) {
-          refreshHeaderItems(false);
-        }
-        const cachedAdmin = getAdminItemsFromCache();
-        if (!cachedAdmin) {
-          refreshAdminItems(false);
-        }
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-
     return () => {
       if (broadcastChannel) {
         broadcastChannel.removeEventListener('message', handleBroadcast);
       }
       window.removeEventListener('storage', handleStorage);
-      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [refreshHeaderItems, refreshAdminItems, refreshSitePages, refreshBgTheme]);
 

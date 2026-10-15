@@ -5,6 +5,7 @@ import { Toaster } from 'sonner';
 import type { AppDispatch, RootState } from './redux/store';
 import { fetchCurrentUserAPI } from './redux/slices/authSlice';
 import { fetchWishlist } from './redux/slices/wishlistSlice';
+import { fetchCart } from './redux/slices/cartSlice';
 import { purgeLegacyStaticCaches, LocalStorage, STORAGE_KEYS } from './Utils/storage';
 import Layout from './Components/Layout';
 import Home from './Pages/Home/Home';
@@ -16,12 +17,17 @@ import AdminProfile from './Dashboard/Pages/AdminProfile';
 import ManageHeader from './Dashboard/Pages/ManageHeader';
 import ManageHomeBanner from './Dashboard/Pages/ManageHomeBanner';
 import ManageProducts from './Dashboard/Pages/ManageProducts';
+import ManageOrders from './Dashboard/Pages/ManageOrders';
 import ProductDetails from './Pages/Product/ProductDetails';
 import ProductsPage from './Pages/Product/ProductsPage';
 import { HeaderNavigationProvider } from './Context/HeaderNavigationContext';
 import { AccountProvider } from './Context/AccountContext';
 import { HomeBannerProvider } from './Context/HomeBannerContext';
 import WishlistPage from './Pages/Wishlist/WishlistPage';
+import CartPage from './Pages/Cart/CartPage';
+import CheckoutAddressPage from './Pages/Checkout/CheckoutAddressPage';
+import CheckoutPaymentPage from './Pages/Checkout/CheckoutPaymentPage';
+import CheckoutConfirmPage from './Pages/Checkout/CheckoutConfirmPage';
 import TermsOfUse from './Pages/PublicPages/TermsOfUse';
 import PrivacyPolicy from './Pages/PublicPages/PrivacyPolicy';
 import GetHelp from './Pages/PublicPages/GetHelp';
@@ -43,6 +49,14 @@ const router = createBrowserRouter([
       { path: 'login', element: <Login /> },
       { path: 'wishlist', element: <WishlistPage /> },
       { path: 'my/wishlist', element: <WishlistPage /> },
+      { path: 'cart', element: <CartPage /> },
+      { path: 'checkout/cart', element: <CartPage /> },
+      { path: 'checkout/address', element: <CheckoutAddressPage /> },
+      { path: 'address', element: <CheckoutAddressPage /> },
+      { path: 'checkout/payment', element: <CheckoutPaymentPage /> },
+      { path: 'payment', element: <CheckoutPaymentPage /> },
+      { path: 'checkout/confirm', element: <CheckoutConfirmPage /> },
+      { path: 'confirm', element: <CheckoutConfirmPage /> },
       { path: 'account', element: <Myaccount /> },
       { path: 'myaccount', element: <Myaccount /> },
       { path: 'my/account', element: <Myaccount /> },
@@ -92,6 +106,7 @@ const router = createBrowserRouter([
         element: <DashboardLayout />,
         children: [
           { index: true, element: <DashboardHome /> },
+          { path: 'orders', element: <ManageOrders /> },
           { path: 'header', element: <ManageHeader /> },
           { path: 'home-banner', element: <ManageHomeBanner /> },
           { path: 'products', element: <ManageProducts /> },
@@ -170,15 +185,17 @@ function App() {
       dispatch(fetchCurrentUserAPI());
     }
 
-    // Fetch user or guest wishlist directly from DB / API
+    // Fetch user or guest wishlist & cart directly from DB / API
     dispatch(fetchWishlist());
+    dispatch(fetchCart());
   }, [dispatch]);
 
-  // Sync user-specific socket room and re-sync wishlist when user logs in / profile rehydrates
+  // Sync user-specific socket room and re-sync wishlist & cart when user logs in / profile rehydrates
   useEffect(() => {
     if (currentUser?.id) {
       syncSocketUserRoom(currentUser.id);
       dispatch(fetchWishlist());
+      dispatch(fetchCart());
     }
   }, [currentUser?.id, dispatch]);
 

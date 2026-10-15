@@ -34,47 +34,11 @@ export const SESSION_KEYS = {
   SESSION_ID: 'yteddy_session_id',
 } as const;
 
-// Stale legacy cache keys to wipe clean from localStorage
-const LEGACY_CACHE_KEYS = [
-  'yteddybags_public_products_cache',
-  'yteddybags_home_banners',
-  'yteddybags_home_banners_time',
-  'yteddybags_home_sub_banners',
-  'yteddybags_home_sub_banners_time',
-  'yteddybags_home_sub_banner_settings',
-  'yteddybags_home_occasions',
-  'yteddybags_home_occasions_time',
-  'yteddybags_home_occasions_settings',
-  'yteddybags_home_bestsellers',
-  'yteddybags_home_bestsellers_time',
-  'yteddybags_home_bestsellers_settings',
-  'yteddybags_home_promo_banners',
-  'yteddybags_home_promo_time',
-  'yteddybags_home_promo_settings',
-  'yteddybags_home_custom_cards',
-  'yteddybags_home_custom_cards_time',
-  'yteddybags_home_custom_cards_settings',
-  'yteddybags_home_sections_layout',
-  'yteddybags_home_sections_layout_time',
-  'yteddybags_home_banner_theme',
-  'yteddybags_home_banner_theme_time',
-  'yteddy_bg_theme_cache',
-  'yteddy_bg_theme_timestamp',
-  'yteddy_account_profile',
-  'yteddy_account_addresses',
-];
-
 /**
- * Clean up obsolete static localStorage entries on startup so that
- * all catalog, banner, and occasion data is 100% dynamic from the DB.
+ * Clean up obsolete static localStorage entries only if needed
  */
 export function purgeLegacyStaticCaches(): void {
-  if (typeof window === 'undefined') return;
-  try {
-    for (const key of LEGACY_CACHE_KEYS) {
-      localStorage.removeItem(key);
-    }
-  } catch (_) {}
+  // Retain persistent localStorage caches (nav, theme, banners, wishlist)
 }
 
 /**

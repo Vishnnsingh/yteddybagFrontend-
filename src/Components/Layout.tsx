@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Header from '../Pages/Header';
+import CartHeader from './CartHeader';
 import Footer from '../Pages/Footer';
 import ThemeBackground from './ThemeBackground';
 
@@ -17,6 +18,12 @@ export default function Layout() {
         location.pathname.startsWith('/addresses') ||
         location.pathname.startsWith('/my/address');
 
+    const isCartPage =
+        location.pathname.startsWith('/cart') ||
+        location.pathname.startsWith('/checkout') ||
+        location.pathname.startsWith('/address') ||
+        location.pathname.startsWith('/payment');
+
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
     // Auto-scroll to top when page path changes
@@ -30,10 +37,16 @@ export default function Layout() {
             {/* Global Fixed Theme Background Wallpaper (Colors & Sticker Doodles across entire website) */}
             <ThemeBackground isFixed />
 
-            {/* Sticky Header Navigation (Hidden on Mobile & Tablet for Account pages) */}
-            <div className={`relative z-20 shrink-0 ${isAccountPage ? 'hidden lg:block' : ''}`}>
-                <Header />
-            </div>
+            {/* Header Navigation: CartHeader for Cart, Standard Header for all other pages */}
+            {isCartPage ? (
+                <div className="relative z-20 shrink-0">
+                    <CartHeader />
+                </div>
+            ) : (
+                <div className={`relative z-20 shrink-0 ${isAccountPage ? 'hidden lg:block' : ''}`}>
+                    <Header />
+                </div>
+            )}
 
             {/* Main Scrollable Viewport */}
             <div

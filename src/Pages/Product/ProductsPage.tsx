@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux';
-import type { AppDispatch, RootState } from '../../redux/store';
-import { fetchPublicProducts } from '../../redux/slices/productSlice';
+import { useSelector } from 'react-redux';
+import { AnimatePresence, motion } from 'framer-motion';
+import type { RootState } from '../../redux/store';
 import type { ProductItem } from '../../redux/slices/productSlice';
-import { usePublicProductsQuery, getCachedPublicProducts, productKeys } from '../../hooks/useProductsQuery';
+import { usePublicProductsQuery, productKeys } from '../../hooks/useProductsQuery';
 import { useQueryClient } from '@tanstack/react-query';
 import { useHeaderNavigation } from '../../Context/HeaderNavigationContext';
 import ProductCard from '../../Components/ProductCard';
@@ -21,12 +21,12 @@ export function toTitleCase(str?: string | null): string {
 }
 
 const SORT_OPTIONS = [
-  { value: 'recommended', label: 'Recommended' },
-  { value: 'price_low', label: 'Price: Low to High' },
-  { value: 'price_high', label: 'Price: High to Low' },
+  { value: 'recommended', label: 'Popularity' },
+  { value: 'price_low', label: 'Price -- Low to High' },
+  { value: 'price_high', label: 'Price -- High to Low' },
   { value: 'rating', label: 'Customer Rating' },
   { value: 'discount', label: 'Better Discount' },
-  { value: 'newest', label: "What's New" },
+  { value: 'newest', label: 'Newest First' },
 ];
 
 export default function ProductsPage() {
@@ -36,7 +36,6 @@ export default function ProductsPage() {
   }>();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const dispatch = useDispatch<AppDispatch>();
   const { products: reduxProducts, loading: isReduxLoading } = useSelector(
     (state: RootState) => state.products
   );
@@ -86,6 +85,37 @@ export default function ProductsPage() {
   const [selectedDiscount, setSelectedDiscount] = useState<number | null>(null);
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [mobileSortOpen, setMobileSortOpen] = useState(false);
+  const [activeFilterTab, setActiveFilterTab] = useState<'categories' | 'price' | 'discount' | 'color'>('categories');
+
+  // Prevent background scroll when mobile filter drawer or sort bottom sheet is open
+  useEffect(() => {
+    if (mobileFilterOpen || mobileSortOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileFilterOpen, mobileSortOpen]);
+
+  // Handler to set sort option, sync URL params, and reset to page 1
+  const handleSelectSort = (value: string) => {
+    setSortOption(value);
+    setSortDropdownOpen(false);
+    setMobileSortOpen(false);
+    setSearchParams((prev) => {
+      const nextParams = new URLSearchParams(prev);
+      if (value === 'recommended') {
+        nextParams.delete('sort');
+      } else {
+        nextParams.set('sort', value);
+      }
+      nextParams.set('page', '1');
+      return nextParams;
+    });
+  };
 
   // Close custom sort dropdown when clicked outside
   useEffect(() => {
@@ -102,13 +132,6 @@ export default function ProductsPage() {
     };
   }, [sortDropdownOpen]);
 
-  // Fetch products catalog on mount only if not already cached in memory or localStorage
-  useEffect(() => {
-    const cached = getCachedPublicProducts();
-    if (reduxProducts.length === 0 && cached.length === 0) {
-      dispatch(fetchPublicProducts());
-    }
-  }, [dispatch, reduxProducts.length]);
 
   // Identify matching Header and Dropdown metadata from URL slugs
   const categoryMeta = useMemo(() => {
@@ -361,8 +384,19 @@ export default function ProductsPage() {
     sortOption,
   ]);
 
-  // Integrated Filter API: Sync criteria with backend /products/filter
+  const hasActiveFilters =
+    selectedCategories.length > 0 ||
+    selectedPriceRange !== 'all' ||
+    selectedDiscount !== null ||
+    selectedColors.length > 0 ||
+    searchTerm.trim().length > 0;
+
+  // Integrated Filter API: Sync criteria with backend /products/filter on-demand
   useEffect(() => {
+    if (!hasActiveFilters && !searchTerm.trim()) {
+      return; // Do NOT fire API call on initial page load when no filters are selected
+    }
+
     const controller = new AbortController();
     const syncBackendFilter = async () => {
       try {
@@ -399,6 +433,7 @@ export default function ProductsPage() {
     sortOption,
     headerSlug,
     dropdownSlug,
+    hasActiveFilters,
   ]);
 
   // Pagination State (50 cards per page = 10 rows of 5 cards)
@@ -431,13 +466,6 @@ export default function ProductsPage() {
     headerSlug,
     dropdownSlug,
   ]);
-
-  const hasActiveFilters =
-    selectedCategories.length > 0 ||
-    selectedPriceRange !== 'all' ||
-    selectedDiscount !== null ||
-    selectedColors.length > 0 ||
-    searchTerm.trim().length > 0;
 
   const toggleCategoryFilter = (catName: string) => {
     setSelectedCategories((prev) =>
@@ -514,39 +542,11 @@ export default function ProductsPage() {
       </div>
 
       {/* Main Container: Compact top spacing connecting directly to Filter & Sort row */}
-      <div className="max-w-[1720px] mx-auto px-4 sm:px-8 md:px-12 lg:px-16 xl:px-20 pt-1 pb-10 flex items-stretch gap-6 lg:gap-8 min-h-[calc(100vh-200px)]">
+      <div className="max-w-[1720px] mx-auto px-4 sm:px-8 md:px-12 lg:px-16 xl:px-20 pt-1 pb-16 lg:pb-10 flex items-stretch gap-6 lg:gap-8 min-h-0 lg:min-h-[calc(100vh-200px)]">
         {/* ================================================================= */}
-        {/* LEFT COLUMN: FILTER SIDEBAR (Clean sticky sidebar without scroll trap) */}
+        {/* LEFT COLUMN: FILTER SIDEBAR (Desktop Only - Clean sticky sidebar without scroll trap) */}
         {/* ================================================================= */}
-        <aside
-          className={`${
-            mobileFilterOpen
-              ? 'fixed inset-0 z-50 bg-white p-6 overflow-y-auto block'
-              : 'hidden lg:block lg:sticky lg:top-4 lg:self-start'
-          } w-full lg:w-64 shrink-0 lg:border-r lg:border-[#EAEAEC] lg:pr-6 space-y-5 select-none`}
-        >
-          {/* Mobile Filter Close Header */}
-          <div className="flex items-center justify-between lg:hidden pb-3 border-b border-gray-200 mb-4">
-            <span className="text-base font-bold text-gray-900">FILTERS</span>
-            <div className="flex items-center gap-3">
-              {hasActiveFilters && (
-                <button
-                  type="button"
-                  onClick={handleClearAllFilters}
-                  className="text-xs font-bold text-[#D26900] uppercase"
-                >
-                  Clear All
-                </button>
-              )}
-              <button
-                onClick={() => setMobileFilterOpen(false)}
-                className="text-xs font-bold text-gray-500 hover:text-black p-1"
-              >
-                ✕ Close
-              </button>
-            </div>
-          </div>
-
+        <aside className="hidden lg:block lg:sticky lg:top-4 lg:self-start w-64 shrink-0 border-r border-[#EAEAEC] pr-6 space-y-5 select-none">
           {/* Desktop Filter Header (Aligned with Sort By toolbar at exact same h-11 height) */}
           <div className="hidden lg:flex items-center justify-between h-11 border-b border-[#EAEAEC]">
             <span className="text-sm sm:text-base font-bold uppercase tracking-wider text-gray-900">
@@ -683,27 +683,21 @@ export default function ProductsPage() {
             </div>
           )}
 
-          {/* Mobile Apply Button */}
-          {mobileFilterOpen && (
-            <div className="pt-4 lg:hidden">
-              <button
-                type="button"
-                onClick={() => setMobileFilterOpen(false)}
-                className="w-full py-3 bg-[#D26900] text-white font-bold rounded-xl text-xs uppercase tracking-wider"
-              >
-                Apply Filters ({filteredProducts.length} Items)
-              </button>
-            </div>
-          )}
         </aside>
 
         {/* ================================================================= */}
         {/* RIGHT AREA: SORT TOOLBAR & PRODUCT CARDS GRID (Pinned Pagination Min-Height Layout) */}
         {/* ================================================================= */}
-        <main className="flex-1 min-w-0 min-h-[750px] sm:min-h-[850px] lg:min-h-[900px] flex flex-col justify-between">
+        <main className="flex-1 min-w-0 min-h-0 lg:min-h-[900px] flex flex-col justify-between">
           <div>
-            {/* Main Content Header Toolbar: Active Filter Chips & Custom Sort Dropdown (Aligned at exact same h-11 height) */}
-            <div className="flex items-center justify-between gap-4 h-11 border-b border-[#EAEAEC] mb-5">
+            {/* Main Content Header Toolbar: Active Filter Chips & Custom Sort Dropdown (Hidden on mobile/tab unless active chips exist) */}
+            <div
+              className={`${
+                hasActiveFilters ? 'flex' : 'hidden lg:flex'
+              } items-center justify-between gap-4 min-h-0 lg:h-11 ${
+                hasActiveFilters ? 'border-b border-[#EAEAEC] pb-2 mb-2.5 sm:mb-3' : ''
+              } lg:border-b lg:border-[#EAEAEC] lg:mb-5`}
+            >
               {/* Active Filter Chips */}
               <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto py-0.5">
                 {selectedCategories.map((cat) => (
@@ -758,34 +752,20 @@ export default function ProductsPage() {
               ))}
             </div>
 
-            {/* Mobile Filter Toggle Button */}
-            <div className="flex items-center gap-2 lg:hidden">
-              <button
-                type="button"
-                onClick={() => setMobileFilterOpen((v) => !v)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-bold text-gray-800 bg-gray-50"
-              >
-                <span>⚙️ Filters</span>
-                {hasActiveFilters && (
-                  <span className="w-2 h-2 rounded-full bg-[#D26900]" />
-                )}
-              </button>
-            </div>
-
-            {/* Custom Theme-Matched Sort By Dropdown (Website Brand Color & CTA Design) */}
-            <div className="flex items-center gap-2 ml-auto shrink-0 relative" ref={sortDropdownRef}>
+            {/* Custom Theme-Matched Sort By Dropdown (Desktop Only) */}
+            <div className="hidden lg:flex items-center gap-2 ml-auto shrink-0 relative" ref={sortDropdownRef}>
               <span className="text-xs text-gray-500 font-medium hidden sm:inline">Sort by:</span>
               <button
                 type="button"
                 onClick={() => setSortDropdownOpen((prev) => !prev)}
-                className={`inline-flex items-center justify-between gap-3 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer shadow-2xs min-w-[155px] ${
+                className={`inline-flex items-center justify-between gap-3 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer shadow-2xs min-w-[160px] ${
                   sortDropdownOpen
                     ? 'border-[#D26900] ring-2 ring-[#D26900]/20 bg-white text-[#D26900]'
                     : 'border-gray-300 text-gray-800 bg-white hover:border-[#D26900] hover:text-[#D26900]'
                 }`}
               >
                 <span className="truncate">
-                  {SORT_OPTIONS.find((o) => o.value === sortOption)?.label || 'Recommended'}
+                  {SORT_OPTIONS.find((o) => o.value === sortOption)?.label || 'Popularity'}
                 </span>
                 <span
                   className={`text-[9px] text-gray-500 transition-transform duration-200 ${
@@ -796,7 +776,7 @@ export default function ProductsPage() {
                 </span>
               </button>
 
-              {/* Custom Floating Menu Styled with Website Theme (No native blue OS select) */}
+              {/* Custom Floating Menu Styled with Website Theme */}
               {sortDropdownOpen && (
                 <div className="absolute right-0 top-full mt-1.5 w-48 bg-white border border-[#D26900]/30 rounded-xl shadow-xl py-1 z-50 animate-fadeIn backdrop-blur-md">
                   {SORT_OPTIONS.map((opt) => {
@@ -805,10 +785,7 @@ export default function ProductsPage() {
                       <button
                         key={opt.value}
                         type="button"
-                        onClick={() => {
-                          setSortOption(opt.value);
-                          setSortDropdownOpen(false);
-                        }}
+                        onClick={() => handleSelectSort(opt.value)}
                         className={`w-full text-left px-3.5 py-2 text-xs transition-colors flex items-center justify-between cursor-pointer ${
                           isSelected
                             ? 'bg-[#D26900]/10 text-[#D26900] font-bold'
@@ -876,7 +853,7 @@ export default function ProductsPage() {
 
           {/* Pagination Controls (Always Pinned to Bottom, including 1 product/page in Image 3) */}
           {filteredProducts.length > 0 && (
-            <div className="mt-auto mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-[#EAEAEC]">
+            <div className="mt-5 lg:mt-auto mb-2 lg:mb-6 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-4 pt-3.5 lg:pt-6 border-t border-[#EAEAEC]">
               <div className="text-xs text-gray-500 font-medium">
                 Showing{' '}
                 <span className="font-bold text-gray-900">
@@ -939,6 +916,450 @@ export default function ProductsPage() {
           )}
         </main>
       </div>
+
+      {/* ================================================================= */}
+      {/* MOBILE & TABLET STICKY BOTTOM BAR (Floating slightly above bottom) */}
+      {/* ================================================================= */}
+      <div className="lg:hidden fixed bottom-2.5 inset-x-3 sm:inset-x-6 md:inset-x-12 z-40 max-w-md mx-auto pointer-events-auto select-none">
+        <div className="bg-white/95 backdrop-blur-md rounded-xl sm:rounded-2xl border border-gray-200/90 shadow-[0_4px_24px_rgba(0,0,0,0.12)] flex items-stretch divide-x divide-gray-200 overflow-hidden h-11 sm:h-12">
+          {/* 1. Sort Button (Image 2 trigger) */}
+          <button
+            type="button"
+            onClick={() => setMobileSortOpen(true)}
+            className="flex-1 flex items-center justify-center gap-2 text-xs sm:text-sm font-bold text-gray-800 hover:bg-orange-50/60 hover:text-[#D26900] active:scale-[0.98] transition-all cursor-pointer"
+          >
+            <svg
+              className="w-4 h-4 text-gray-700 shrink-0"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M7 4v16M7 4l-4 4M7 4l4 4M17 20V4M17 20l-4-4M17 20l4-4" />
+            </svg>
+            <span>Sort</span>
+            {sortOption !== 'recommended' && (
+              <span className="w-2 h-2 rounded-full bg-[#D26900]" />
+            )}
+          </button>
+
+          {/* 2. Filter Button (Image 3 trigger) */}
+          <button
+            type="button"
+            onClick={() => setMobileFilterOpen(true)}
+            className="flex-1 flex items-center justify-center gap-2 text-xs sm:text-sm font-bold text-gray-800 hover:bg-orange-50/60 hover:text-[#D26900] active:scale-[0.98] transition-all cursor-pointer"
+          >
+            <svg
+              className="w-4 h-4 text-gray-700 shrink-0"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+            </svg>
+            <span>Filter</span>
+            {(selectedCategories.length + (selectedPriceRange !== 'all' ? 1 : 0) + (selectedDiscount !== null ? 1 : 0) + selectedColors.length) > 0 && (
+              <span className="min-w-4.5 h-4.5 px-1 bg-[#D26900] text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                {selectedCategories.length + (selectedPriceRange !== 'all' ? 1 : 0) + (selectedDiscount !== null ? 1 : 0) + selectedColors.length}
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ================================================================= */}
+      {/* MOBILE SORT BOTTOM SHEET (Image 2 Reference - Flipkart Style) */}
+      {/* ================================================================= */}
+      <AnimatePresence>
+        {mobileSortOpen && (
+          <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setMobileSortOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-xs"
+            />
+
+            {/* Bottom Sheet Card */}
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+              className="relative w-full max-w-lg mx-auto bg-white rounded-t-2xl shadow-2xl z-10 overflow-hidden"
+            >
+              {/* Header: SORT BY */}
+              <div className="px-5 pt-4 pb-3 border-b border-gray-150 flex items-center justify-between bg-white">
+                <span className="text-[11px] font-bold tracking-wider text-gray-400 uppercase">
+                  SORT BY
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMobileSortOpen(false)}
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Sort Options List */}
+              <div className="py-1">
+                {SORT_OPTIONS.map((opt) => {
+                  const isSelected = sortOption === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => handleSelectSort(opt.value)}
+                      className={`w-full text-left px-5 py-3.5 text-sm transition-colors flex items-center justify-between cursor-pointer border-b border-gray-50 last:border-b-0 ${
+                        isSelected
+                          ? 'bg-orange-50/50 text-[#D26900] font-bold'
+                          : 'text-gray-800 hover:bg-gray-50 font-medium'
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                      <div
+                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                          isSelected ? 'border-[#D26900]' : 'border-gray-300'
+                        }`}
+                      >
+                        {isSelected && (
+                          <span className="w-2.5 h-2.5 rounded-full bg-[#D26900]" />
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ================================================================= */}
+      {/* MOBILE SPLIT FILTER DRAWER (Image 3 Reference - Flipkart Style) */}
+      {/* ================================================================= */}
+      <AnimatePresence>
+        {mobileFilterOpen && (
+          <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setMobileFilterOpen(false)}
+              className="fixed inset-0 bg-black/50"
+            />
+
+            {/* Split Drawer Modal Container */}
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 30, stiffness: 320 }}
+              className="relative w-full h-[92vh] sm:h-[88vh] max-w-lg mx-auto bg-white rounded-t-2xl shadow-2xl z-10 flex flex-col overflow-hidden"
+            >
+              {/* Drawer Top Header (← Filters | Clear All) */}
+              <div className="h-14 px-4 sm:px-5 border-b border-gray-200 flex items-center justify-between bg-white shrink-0">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setMobileFilterOpen(false)}
+                    className="p-1.5 -ml-1.5 rounded-full text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-colors cursor-pointer"
+                  >
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="19" y1="12" x2="5" y2="12" />
+                      <polyline points="12 19 5 12 12 5" />
+                    </svg>
+                  </button>
+                  <h3 className="text-base font-bold text-gray-900">Filters</h3>
+                </div>
+
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={handleClearAllFilters}
+                    className="text-xs font-bold text-[#D26900] hover:text-[#B45309] uppercase tracking-wider py-1 px-2 rounded hover:bg-orange-50 transition-colors cursor-pointer"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+
+              {/* Split 2-Column Body */}
+              <div className="flex-1 min-h-0 flex flex-row overflow-hidden bg-white">
+                {/* Left Column: Filter Categories Navigation */}
+                <div className="w-[38%] max-w-[150px] bg-[#F1F3F6] border-r border-gray-200 overflow-y-auto select-none py-1">
+                  {/* Category Tab */}
+                  <button
+                    type="button"
+                    onClick={() => setActiveFilterTab('categories')}
+                    className={`w-full text-left px-3.5 py-4 text-xs sm:text-sm transition-all flex items-center justify-between cursor-pointer border-l-4 ${
+                      activeFilterTab === 'categories'
+                        ? 'bg-white text-[#D26900] font-bold border-[#D26900]'
+                        : 'bg-transparent text-gray-700 font-medium hover:bg-gray-200/60 border-transparent'
+                    }`}
+                  >
+                    <span className="truncate">Categories</span>
+                    {selectedCategories.length > 0 && (
+                      <span className="w-2 h-2 rounded-full bg-[#D26900] shrink-0" />
+                    )}
+                  </button>
+
+                  {/* Price Tab */}
+                  <button
+                    type="button"
+                    onClick={() => setActiveFilterTab('price')}
+                    className={`w-full text-left px-3.5 py-4 text-xs sm:text-sm transition-all flex items-center justify-between cursor-pointer border-l-4 ${
+                      activeFilterTab === 'price'
+                        ? 'bg-white text-[#D26900] font-bold border-[#D26900]'
+                        : 'bg-transparent text-gray-700 font-medium hover:bg-gray-200/60 border-transparent'
+                    }`}
+                  >
+                    <span className="truncate">Price</span>
+                    {selectedPriceRange !== 'all' && (
+                      <span className="w-2 h-2 rounded-full bg-[#D26900] shrink-0" />
+                    )}
+                  </button>
+
+                  {/* Discount Tab */}
+                  <button
+                    type="button"
+                    onClick={() => setActiveFilterTab('discount')}
+                    className={`w-full text-left px-3.5 py-4 text-xs sm:text-sm transition-all flex items-center justify-between cursor-pointer border-l-4 ${
+                      activeFilterTab === 'discount'
+                        ? 'bg-white text-[#D26900] font-bold border-[#D26900]'
+                        : 'bg-transparent text-gray-700 font-medium hover:bg-gray-200/60 border-transparent'
+                    }`}
+                  >
+                    <span className="truncate">Discount</span>
+                    {selectedDiscount !== null && (
+                      <span className="w-2 h-2 rounded-full bg-[#D26900] shrink-0" />
+                    )}
+                  </button>
+
+                  {/* Color Tab */}
+                  {availableColors.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveFilterTab('color')}
+                      className={`w-full text-left px-3.5 py-4 text-xs sm:text-sm transition-all flex items-center justify-between cursor-pointer border-l-4 ${
+                        activeFilterTab === 'color'
+                          ? 'bg-white text-[#D26900] font-bold border-[#D26900]'
+                          : 'bg-transparent text-gray-700 font-medium hover:bg-gray-200/60 border-transparent'
+                      }`}
+                    >
+                      <span className="truncate">Color</span>
+                      {selectedColors.length > 0 && (
+                        <span className="w-2 h-2 rounded-full bg-[#D26900] shrink-0" />
+                      )}
+                    </button>
+                  )}
+                </div>
+
+                {/* Right Column: Selected Tab Options */}
+                <div className="flex-1 bg-white overflow-y-auto px-4 py-3 select-none">
+                  {/* TAB 1: Categories Content */}
+                  {activeFilterTab === 'categories' && (
+                    <div>
+                      {availableCategories.length === 0 ? (
+                        <p className="text-xs text-gray-400 py-6 text-center">No categories found</p>
+                      ) : (
+                        availableCategories.map((cat) => {
+                          const isChecked = selectedCategories.includes(cat);
+                          return (
+                            <label
+                              key={cat}
+                              className="flex items-center gap-3.5 py-3 border-b border-gray-100 last:border-b-0 cursor-pointer group"
+                            >
+                              <div
+                                className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                                  isChecked
+                                    ? 'bg-[#D26900] border-[#D26900] text-white'
+                                    : 'border-gray-300 bg-white group-hover:border-[#D26900]'
+                                }`}
+                              >
+                                {isChecked && (
+                                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                  </svg>
+                                )}
+                              </div>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleCategoryFilter(cat)}
+                                className="sr-only"
+                              />
+                              <span className={`text-xs sm:text-sm ${isChecked ? 'font-bold text-gray-900' : 'text-gray-700 font-medium'}`}>
+                                {toTitleCase(cat)}
+                              </span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+
+                  {/* TAB 2: Price Content */}
+                  {activeFilterTab === 'price' && (
+                    <div>
+                      {[
+                        { label: 'All Prices', val: 'all' },
+                        { label: 'Under ₹999', val: 'under_999' },
+                        { label: '₹1,000 to ₹1,999', val: '1000_1999' },
+                        { label: '₹2,000 to ₹2,999', val: '2000_2999' },
+                        { label: '₹3,000 & Above', val: '3000_above' },
+                      ].map((p) => {
+                        const isSelected = selectedPriceRange === p.val;
+                        return (
+                          <label
+                            key={p.val}
+                            className="flex items-center gap-3.5 py-3 border-b border-gray-100 last:border-b-0 cursor-pointer group"
+                          >
+                            <div
+                              className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                isSelected ? 'border-[#D26900]' : 'border-gray-300 group-hover:border-[#D26900]'
+                              }`}
+                            >
+                              {isSelected && <span className="w-2.5 h-2.5 rounded-full bg-[#D26900]" />}
+                            </div>
+                            <input
+                              type="radio"
+                              name="mobile_price_choice"
+                              checked={isSelected}
+                              onChange={() => setSelectedPriceRange(p.val)}
+                              className="sr-only"
+                            />
+                            <span className={`text-xs sm:text-sm ${isSelected ? 'font-bold text-gray-900' : 'text-gray-700 font-medium'}`}>
+                              {p.label}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* TAB 3: Discount Content */}
+                  {activeFilterTab === 'discount' && (
+                    <div>
+                      {[
+                        { label: 'All Discounts', val: null },
+                        { label: '10% and above', val: 10 },
+                        { label: '20% and above', val: 20 },
+                        { label: '30% and above', val: 30 },
+                        { label: '40% and above', val: 40 },
+                        { label: '50% and above', val: 50 },
+                      ].map((d) => {
+                        const isSelected = selectedDiscount === d.val;
+                        return (
+                          <label
+                            key={String(d.val)}
+                            className="flex items-center gap-3.5 py-3 border-b border-gray-100 last:border-b-0 cursor-pointer group"
+                          >
+                            <div
+                              className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                isSelected ? 'border-[#D26900]' : 'border-gray-300 group-hover:border-[#D26900]'
+                              }`}
+                            >
+                              {isSelected && <span className="w-2.5 h-2.5 rounded-full bg-[#D26900]" />}
+                            </div>
+                            <input
+                              type="radio"
+                              name="mobile_discount_choice"
+                              checked={isSelected}
+                              onChange={() => setSelectedDiscount(d.val)}
+                              className="sr-only"
+                            />
+                            <span className={`text-xs sm:text-sm ${isSelected ? 'font-bold text-gray-900' : 'text-gray-700 font-medium'}`}>
+                              {d.label}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* TAB 4: Color Content */}
+                  {activeFilterTab === 'color' && (
+                    <div>
+                      {availableColors.length === 0 ? (
+                        <p className="text-xs text-gray-400 py-6 text-center">No colors available</p>
+                      ) : (
+                        availableColors.map((c) => {
+                          const isChecked = selectedColors.includes(c.name);
+                          return (
+                            <label
+                              key={c.name}
+                              className="flex items-center gap-3.5 py-3 border-b border-gray-100 last:border-b-0 cursor-pointer group"
+                            >
+                              <div
+                                className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                                  isChecked
+                                    ? 'bg-[#D26900] border-[#D26900] text-white'
+                                    : 'border-gray-300 bg-white group-hover:border-[#D26900]'
+                                }`}
+                              >
+                                {isChecked && (
+                                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                  </svg>
+                                )}
+                              </div>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleColorFilter(c.name)}
+                                className="sr-only"
+                              />
+                              <span
+                                className="w-4.5 h-4.5 rounded-full border border-gray-300 shadow-2xs shrink-0"
+                                style={{ backgroundColor: c.hex }}
+                              />
+                              <span className={`text-xs sm:text-sm capitalize ${isChecked ? 'font-bold text-gray-900' : 'text-gray-700 font-medium'}`}>
+                                {c.name} ({c.count})
+                              </span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Bottom Footer (Image 3 Style: products found count + Apply CTA button) */}
+              <div className="shrink-0 border-t border-gray-200 bg-white px-5 py-3 sm:py-3.5 flex items-center justify-between shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
+                <div>
+                  <div className="text-base sm:text-lg font-bold text-gray-900 leading-tight">
+                    {filteredProducts.length.toLocaleString('en-IN')}
+                  </div>
+                  <div className="text-[11px] text-gray-500 font-normal leading-tight">
+                    products found
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setMobileFilterOpen(false)}
+                  className="px-8 py-2.5 sm:py-3 bg-[#D26900] hover:bg-[#B45309] active:scale-[0.98] text-white text-xs sm:text-sm font-bold uppercase tracking-wider rounded-lg shadow-md transition-all cursor-pointer"
+                >
+                  Apply
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

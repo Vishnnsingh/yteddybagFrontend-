@@ -442,6 +442,8 @@ interface HomeBannerContextType {
   availableThemes: BannerThemeOption[];
   setActiveTheme: (themeId: string) => Promise<boolean>;
   fetchPublicBanners: (force?: boolean) => Promise<void>;
+  fetchBannerTheme: (force?: boolean) => Promise<void>;
+  fetchHomeDataOnDemand: (force?: boolean) => Promise<void>;
   fetchAdminBanners: () => Promise<void>;
   uploadBannerMedia: (file: File) => Promise<UploadMediaResult | null>;
   createBanner: (data: Partial<HomeBannerItem>) => Promise<boolean>;
@@ -562,74 +564,119 @@ export const defaultCustomCardsSettings: CustomCardsSettings = {
   card_bg_color: '#FFFFFF',
 };
 
+const CACHE_KEY_BANNERS = 'yteddy_home_banners_cache';
+const CACHE_KEY_BANNER_THEME = 'yteddy_home_theme_cache';
+const CACHE_KEY_SUB_BANNERS = 'yteddy_home_sub_banners_cache';
+const CACHE_KEY_OCCASIONS = 'yteddy_home_occasions_cache';
+const CACHE_KEY_BESTSELLERS = 'yteddy_home_bestsellers_cache';
+const CACHE_KEY_PROMO_BANNERS = 'yteddy_home_promo_banners_cache';
+const CACHE_KEY_CUSTOM_CARDS = 'yteddy_home_custom_cards_cache';
+const CACHE_KEY_SECTIONS_LAYOUT = 'yteddy_home_layout_cache';
+
+function getHomeStorageCache<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function setHomeStorageCache<T>(key: string, data: T): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch {}
+}
+
 const HomeBannerContext = createContext<HomeBannerContextType | undefined>(undefined);
 
 export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [banners, setBanners] = useState<HomeBannerItem[]>([]);
+  const [banners, setBanners] = useState<HomeBannerItem[]>(() => {
+    return getHomeStorageCache<HomeBannerItem[]>(CACHE_KEY_BANNERS) || [];
+  });
   const [adminBanners, setAdminBanners] = useState<HomeBannerItem[]>([]);
-  const [activeTheme, setActiveThemeState] = useState<string>('peek-carousel');
+  const [activeTheme, setActiveThemeState] = useState<string>(() => {
+    return getHomeStorageCache<string>(CACHE_KEY_BANNER_THEME) || 'peek-carousel';
+  });
   const [loading, setLoading] = useState(false);
   const [adminLoading, setAdminLoading] = useState(false);
 
   // Sub-banners state
-  const [subBanners, setSubBanners] = useState<HomeSubBannerItem[]>([]);
+  const cachedSubBanners = getHomeStorageCache<{ items: HomeSubBannerItem[]; settings: SubBannerSettings }>(CACHE_KEY_SUB_BANNERS);
+  const [subBanners, setSubBanners] = useState<HomeSubBannerItem[]>(cachedSubBanners?.items || []);
   const [adminSubBanners, setAdminSubBanners] = useState<HomeSubBannerItem[]>([]);
-  const [subBannerSettings, setSubBannerSettings] = useState<SubBannerSettings>({
-    is_enabled: true,
-    default_hover_bg: '#FFF7ED',
-  });
+  const [subBannerSettings, setSubBannerSettings] = useState<SubBannerSettings>(
+    cachedSubBanners?.settings || {
+      is_enabled: true,
+      default_hover_bg: '#FFF7ED',
+    }
+  );
   const [subBannerLoading, setSubBannerLoading] = useState(false);
 
   // Occasions state
-  const [occasions, setOccasions] = useState<HomeOccasionItem[]>([]);
+  const cachedOccasions = getHomeStorageCache<{ items: HomeOccasionItem[]; settings: OccasionSettings }>(CACHE_KEY_OCCASIONS);
+  const [occasions, setOccasions] = useState<HomeOccasionItem[]>(cachedOccasions?.items || []);
   const [adminOccasions, setAdminOccasions] = useState<HomeOccasionItem[]>([]);
-  const [occasionsSettings, setOccasionsSettings] = useState<OccasionSettings>({
-    is_enabled: true,
-    section_title: 'Gifts For Every Occasion',
-  });
+  const [occasionsSettings, setOccasionsSettings] = useState<OccasionSettings>(
+    cachedOccasions?.settings || {
+      is_enabled: true,
+      section_title: 'Gifts For Every Occasion',
+    }
+  );
   const [occasionsLoading, setOccasionsLoading] = useState(false);
 
   // Bestsellers state
-  const [bestsellers, setBestsellers] = useState<HomeBestsellerItem[]>([]);
+  const cachedBestsellers = getHomeStorageCache<{ items: HomeBestsellerItem[]; settings: BestsellerSettings }>(CACHE_KEY_BESTSELLERS);
+  const [bestsellers, setBestsellers] = useState<HomeBestsellerItem[]>(cachedBestsellers?.items || []);
   const [adminBestsellers, setAdminBestsellers] = useState<HomeBestsellerItem[]>([]);
-  const [bestsellerSettings, setBestsellerSettings] = useState<BestsellerSettings>({
-    is_enabled: true,
-    section_title: 'Shop By Bestsellers',
-    section_subtitle: "Discover India's favourite gifting options, curated bestsellers that make every celebration extra special",
-    view_all_text: 'View All Bestsellers',
-    view_all_url: '/category/bestsellers',
-    show_view_all: true,
-    card_theme: 'classic-clean',
-    card_bg_mode: 'white',
-    card_bg_color: '#FFFFFF',
-    card_transparency: 0,
-    section_bg_mode: 'transparent',
-    section_bg_color: '#FFFFFF',
-    cards_per_row: '4',
-  });
+  const [bestsellerSettings, setBestsellerSettings] = useState<BestsellerSettings>(
+    cachedBestsellers?.settings || {
+      is_enabled: true,
+      section_title: 'Shop By Bestsellers',
+      section_subtitle: "Discover India's favourite gifting options, curated bestsellers that make every celebration extra special",
+      view_all_text: 'View All Bestsellers',
+      view_all_url: '/category/bestsellers',
+      show_view_all: true,
+      card_theme: 'classic-clean',
+      card_bg_mode: 'white',
+      card_bg_color: '#FFFFFF',
+      card_transparency: 0,
+      section_bg_mode: 'transparent',
+      section_bg_color: '#FFFFFF',
+      cards_per_row: '4',
+    }
+  );
   const [bestsellerLoading, setBestsellerLoading] = useState(false);
 
   // Promo Banners state
-  const [promoBanners, setPromoBanners] = useState<HomePromoBannerItem[]>([]);
+  const cachedPromo = getHomeStorageCache<{ items: HomePromoBannerItem[]; settings: PromoBannerSettings }>(CACHE_KEY_PROMO_BANNERS);
+  const [promoBanners, setPromoBanners] = useState<HomePromoBannerItem[]>(cachedPromo?.items || []);
   const [adminPromoBanners, setAdminPromoBanners] = useState<HomePromoBannerItem[]>([]);
-  const [promoBannerSettings, setPromoBannerSettings] = useState<PromoBannerSettings>({
-    is_enabled: true,
-    autoplay: true,
-    autoplay_interval: 4000,
-    banner_height: 'standard',
-    show_dots: true,
-    border_radius: 'rounded-2xl',
-  });
+  const [promoBannerSettings, setPromoBannerSettings] = useState<PromoBannerSettings>(
+    cachedPromo?.settings || {
+      is_enabled: true,
+      autoplay: true,
+      autoplay_interval: 4000,
+      banner_height: 'standard',
+      show_dots: true,
+      border_radius: 'rounded-2xl',
+    }
+  );
   const [promoBannerLoading, setPromoBannerLoading] = useState(false);
 
   // Custom Showcase Cards state
-  const [customCards, setCustomCards] = useState<HomeCustomCardItem[]>([]);
+  const cachedCustomCards = getHomeStorageCache<{ items: HomeCustomCardItem[]; settings: CustomCardsSettings }>(CACHE_KEY_CUSTOM_CARDS);
+  const [customCards, setCustomCards] = useState<HomeCustomCardItem[]>(cachedCustomCards?.items || []);
   const [adminCustomCards, setAdminCustomCards] = useState<HomeCustomCardItem[]>([]);
-  const [customCardsSettings, setCustomCardsSettings] = useState<CustomCardsSettings>(defaultCustomCardsSettings);
+  const [customCardsSettings, setCustomCardsSettings] = useState<CustomCardsSettings>(
+    cachedCustomCards?.settings || defaultCustomCardsSettings
+  );
   const [customCardsLoading, setCustomCardsLoading] = useState(false);
 
   // Home Sections Layout & Dynamic Page Builder state
-  const [sectionsLayout, setSectionsLayout] = useState<HomeSectionLayoutItem[]>(defaultHomeSectionsLayout);
+  const cachedLayout = getHomeStorageCache<HomeSectionLayoutItem[]>(CACHE_KEY_SECTIONS_LAYOUT);
+  const [sectionsLayout, setSectionsLayout] = useState<HomeSectionLayoutItem[]>(cachedLayout || defaultHomeSectionsLayout);
   const [adminSectionsLayout, setAdminSectionsLayout] = useState<HomeSectionLayoutItem[]>(defaultHomeSectionsLayout);
   const [sectionsLayoutLoading, setSectionsLayoutLoading] = useState(false);
 
@@ -645,7 +692,14 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const hasInitializedRef = React.useRef(false);
 
   // Fetch active theme from backend
-  const fetchBannerTheme = useCallback(async () => {
+  const fetchBannerTheme = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getHomeStorageCache<string>(CACHE_KEY_BANNER_THEME);
+      if (cached) {
+        setActiveThemeState(cached);
+        return;
+      }
+    }
     if (isFetchingThemeRef.current) return;
     try {
       isFetchingThemeRef.current = true;
@@ -653,6 +707,7 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       const theme = res.data?.data?.theme;
       if (theme && BANNER_THEMES.some((t) => t.id === theme)) {
         setActiveThemeState(theme);
+        setHomeStorageCache(CACHE_KEY_BANNER_THEME, theme);
       }
     } catch (err: any) {
       console.warn('[HomeBanner] Fetch theme error:', err?.message || err);
@@ -669,6 +724,7 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
     try {
       setActiveThemeState(newTheme);
+      setHomeStorageCache(CACHE_KEY_BANNER_THEME, newTheme);
 
       // 1. Cross-tab sync
       if (typeof BroadcastChannel !== 'undefined') {
@@ -694,6 +750,7 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const broadcastBannersUpdate = useCallback((newBanners: HomeBannerItem[]) => {
     try {
       const activeOnly = newBanners.filter((b) => b.is_active);
+      setHomeStorageCache(CACHE_KEY_BANNERS, activeOnly);
 
       // 1. Cross-tab BroadcastChannel
       if (typeof BroadcastChannel !== 'undefined') {
@@ -716,7 +773,14 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   // Fetch public active banners dynamically from DB
-  const fetchPublicBanners = useCallback(async () => {
+  const fetchPublicBanners = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getHomeStorageCache<HomeBannerItem[]>(CACHE_KEY_BANNERS);
+      if (cached && cached.length > 0) {
+        setBanners(cached);
+        return;
+      }
+    }
     if (isFetchingBannersRef.current) return;
     try {
       isFetchingBannersRef.current = true;
@@ -725,6 +789,7 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       const list = parseBannerArray(res.data);
       if (list.length > 0) {
         setBanners(list);
+        setHomeStorageCache(CACHE_KEY_BANNERS, list);
       }
     } catch (err: any) {
       console.warn('[HomeBanner] Fetch public banners error:', err?.message || err);
@@ -888,6 +953,9 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const broadcastSubBannersUpdate = (items: HomeSubBannerItem[], settings?: SubBannerSettings) => {
     try {
+      const activeOnly = items.filter((b) => b.is_active);
+      setHomeStorageCache(CACHE_KEY_SUB_BANNERS, { items: activeOnly, settings: settings || subBannerSettings });
+
       if (typeof BroadcastChannel !== 'undefined') {
         const bc = new BroadcastChannel('yteddybags_banners_channel');
         bc.postMessage({ type: 'SUB_BANNERS_UPDATED', items, settings });
@@ -898,7 +966,15 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   // Fetch public active sub-banners dynamically from DB
-  const fetchPublicSubBanners = useCallback(async (_force?: boolean) => {
+  const fetchPublicSubBanners = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getHomeStorageCache<{ items: HomeSubBannerItem[]; settings: SubBannerSettings }>(CACHE_KEY_SUB_BANNERS);
+      if (cached && cached.items && cached.items.length > 0) {
+        setSubBanners(cached.items);
+        if (cached.settings) setSubBannerSettings(cached.settings);
+        return;
+      }
+    }
     if (isFetchingSubBannersRef.current) return;
     try {
       isFetchingSubBannersRef.current = true;
@@ -906,13 +982,17 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       const res = await apiClient.get('/home-banners/sub-banners');
       if (res.data?.success && res.data.data) {
         const { is_enabled, default_hover_bg, items } = res.data.data;
+        const newSettings =
+          typeof is_enabled === 'boolean'
+            ? { is_enabled, default_hover_bg: default_hover_bg || '#FFF7ED' }
+            : subBannerSettings;
         if (Array.isArray(items)) {
           setSubBanners(items);
         }
         if (typeof is_enabled === 'boolean') {
-          const newSettings = { is_enabled, default_hover_bg: default_hover_bg || '#FFF7ED' };
           setSubBannerSettings(newSettings);
         }
+        setHomeStorageCache(CACHE_KEY_SUB_BANNERS, { items: items || [], settings: newSettings });
       }
     } catch (err: any) {
       console.warn('[HomeBanner] Fetch sub-banners error:', err?.message || err);
@@ -920,7 +1000,7 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setSubBannerLoading(false);
       isFetchingSubBannersRef.current = false;
     }
-  }, []);
+  }, [subBannerSettings]);
 
   // Fetch admin all sub-banners
   const fetchAdminSubBanners = useCallback(async () => {
@@ -1094,6 +1174,9 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Broadcast occasions update
   const broadcastOccasionsUpdate = (items: HomeOccasionItem[], settings?: OccasionSettings) => {
     try {
+      const activeOnly = items.filter((b) => b.is_active);
+      setHomeStorageCache(CACHE_KEY_OCCASIONS, { items: activeOnly, settings: settings || occasionsSettings });
+
       if (typeof BroadcastChannel !== 'undefined') {
         const bc = new BroadcastChannel('yteddybags_banners_channel');
         bc.postMessage({ type: 'OCCASIONS_UPDATED', items, settings });
@@ -1104,7 +1187,15 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   // Fetch public active occasions & settings dynamically from DB
-  const fetchPublicOccasions = useCallback(async (_force?: boolean) => {
+  const fetchPublicOccasions = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getHomeStorageCache<{ items: HomeOccasionItem[]; settings: OccasionSettings }>(CACHE_KEY_OCCASIONS);
+      if (cached && cached.items && cached.items.length > 0) {
+        setOccasions(cached.items);
+        if (cached.settings) setOccasionsSettings(cached.settings);
+        return;
+      }
+    }
     if (isFetchingOccasionsRef.current) return;
     try {
       isFetchingOccasionsRef.current = true;
@@ -1112,13 +1203,17 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       const res = await apiClient.get('/home-banners/occasions');
       if (res.data?.success && res.data.data) {
         const { is_enabled, section_title, items } = res.data.data;
+        const newSettings =
+          typeof is_enabled === 'boolean'
+            ? { is_enabled, section_title: section_title || 'Gifts For Every Occasion' }
+            : occasionsSettings;
         if (Array.isArray(items)) {
           setOccasions(items);
         }
         if (typeof is_enabled === 'boolean') {
-          const newSettings = { is_enabled, section_title: section_title || 'Gifts For Every Occasion' };
           setOccasionsSettings(newSettings);
         }
+        setHomeStorageCache(CACHE_KEY_OCCASIONS, { items: items || [], settings: newSettings });
       }
     } catch (err: any) {
       console.warn('[HomeBanner] Fetch occasions error:', err?.message || err);
@@ -1126,7 +1221,7 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setOccasionsLoading(false);
       isFetchingOccasionsRef.current = false;
     }
-  }, []);
+  }, [occasionsSettings]);
 
   // Fetch admin all occasions & settings
   const fetchAdminOccasions = useCallback(async () => {
@@ -1300,6 +1395,9 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Broadcast bestsellers update across tabs & components
   const broadcastBestsellersUpdate = (items: HomeBestsellerItem[], settings?: BestsellerSettings) => {
     try {
+      const activeOnly = items.filter((b) => b.is_active);
+      setHomeStorageCache(CACHE_KEY_BESTSELLERS, { items: activeOnly, settings: settings || bestsellerSettings });
+
       if (typeof BroadcastChannel !== 'undefined') {
         const bc = new BroadcastChannel('yteddybags_banners_channel');
         bc.postMessage({ type: 'BESTSELLERS_UPDATED', items, settings });
@@ -1310,7 +1408,15 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   // Fetch public active bestsellers & settings dynamically from DB
-  const fetchPublicBestsellers = useCallback(async (_force?: boolean) => {
+  const fetchPublicBestsellers = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getHomeStorageCache<{ items: HomeBestsellerItem[]; settings: BestsellerSettings }>(CACHE_KEY_BESTSELLERS);
+      if (cached && cached.items && cached.items.length > 0) {
+        setBestsellers(cached.items);
+        if (cached.settings) setBestsellerSettings(cached.settings);
+        return;
+      }
+    }
     if (isFetchingBestsellersRef.current) return;
     try {
       isFetchingBestsellersRef.current = true;
@@ -1361,6 +1467,7 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         };
 
         setBestsellerSettings(newSettings);
+        setHomeStorageCache(CACHE_KEY_BESTSELLERS, { items: items || [], settings: newSettings });
       }
     } catch (err: any) {
       console.warn('[HomeBanner] Fetch bestsellers error:', err?.message || err);
@@ -1368,7 +1475,7 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setBestsellerLoading(false);
       isFetchingBestsellersRef.current = false;
     }
-  }, []);
+  }, [bestsellerSettings]);
 
   // Fetch admin all bestsellers & settings
   const fetchAdminBestsellers = useCallback(async () => {
@@ -1577,6 +1684,9 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Broadcast promo banner update across tabs & components
   const broadcastPromoUpdate = (items: HomePromoBannerItem[], settings?: PromoBannerSettings) => {
     try {
+      const activeOnly = items.filter((b) => b.is_active);
+      setHomeStorageCache(CACHE_KEY_PROMO_BANNERS, { items: activeOnly, settings: settings || promoBannerSettings });
+
       if (typeof BroadcastChannel !== 'undefined') {
         const bc = new BroadcastChannel('yteddybags_banners_channel');
         bc.postMessage({ type: 'PROMO_BANNER_UPDATED', items, settings });
@@ -1589,7 +1699,15 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   // Fetch public active promo banners & settings dynamically from DB
-  const fetchPublicPromoBanners = useCallback(async (_force?: boolean) => {
+  const fetchPublicPromoBanners = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getHomeStorageCache<{ items: HomePromoBannerItem[]; settings: PromoBannerSettings }>(CACHE_KEY_PROMO_BANNERS);
+      if (cached && cached.items && cached.items.length > 0) {
+        setPromoBanners(cached.items);
+        if (cached.settings) setPromoBannerSettings(cached.settings);
+        return;
+      }
+    }
     if (isFetchingPromoRef.current) return;
     try {
       isFetchingPromoRef.current = true;
@@ -1603,6 +1721,7 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         if (settings) {
           setPromoBannerSettings(settings);
         }
+        setHomeStorageCache(CACHE_KEY_PROMO_BANNERS, { items: items || [], settings: settings || promoBannerSettings });
       }
     } catch (err: any) {
       console.warn('[HomeBanner] Fetch promo banner error:', err?.message || err);
@@ -1610,7 +1729,7 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       setPromoBannerLoading(false);
       isFetchingPromoRef.current = false;
     }
-  }, []);
+  }, [promoBannerSettings]);
 
   // Fetch admin all promo banners & settings
   const fetchAdminPromoBanners = useCallback(async () => {
@@ -1754,6 +1873,9 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Custom Showcase Cards Broadcast Helper
   const broadcastCustomCardsUpdate = (items: HomeCustomCardItem[], settings: CustomCardsSettings) => {
     try {
+      const activeOnly = items.filter((b) => b.is_active);
+      setHomeStorageCache(CACHE_KEY_CUSTOM_CARDS, { items: activeOnly, settings });
+
       if (typeof BroadcastChannel !== 'undefined') {
         const bc = new BroadcastChannel('yteddybags_banners_channel');
         bc.postMessage({ type: 'CUSTOM_CARDS_UPDATED', items, settings });
@@ -1771,7 +1893,15 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   // Fetch public custom cards dynamically from DB
-  const fetchPublicCustomCards = useCallback(async (_force?: boolean) => {
+  const fetchPublicCustomCards = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getHomeStorageCache<{ items: HomeCustomCardItem[]; settings: CustomCardsSettings }>(CACHE_KEY_CUSTOM_CARDS);
+      if (cached && cached.items && cached.items.length > 0) {
+        setCustomCards(cached.items);
+        if (cached.settings) setCustomCardsSettings(cached.settings);
+        return;
+      }
+    }
     if (isFetchingCustomCardsRef.current) return;
     try {
       isFetchingCustomCardsRef.current = true;
@@ -1782,6 +1912,7 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         const settings: CustomCardsSettings = res.data.data.settings || defaultCustomCardsSettings;
         setCustomCards(items);
         setCustomCardsSettings(settings);
+        setHomeStorageCache(CACHE_KEY_CUSTOM_CARDS, { items, settings });
       }
     } catch (err: any) {
       console.warn('[HomeBanner] Fetch custom cards notice:', err?.message || err);
@@ -1930,6 +2061,9 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Home Sections Layout Broadcast Helper
   const broadcastSectionsLayoutUpdate = (items: HomeSectionLayoutItem[]) => {
     try {
+      const activeOnly = items.filter((s) => s.is_enabled !== false);
+      setHomeStorageCache(CACHE_KEY_SECTIONS_LAYOUT, activeOnly);
+
       if (typeof BroadcastChannel !== 'undefined') {
         const bc = new BroadcastChannel('yteddybags_banners_channel');
         bc.postMessage({ type: 'SECTIONS_LAYOUT_UPDATED', items });
@@ -1947,7 +2081,14 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   // Fetch public sections layout dynamically from DB
-  const fetchPublicSectionsLayout = useCallback(async (_force?: boolean) => {
+  const fetchPublicSectionsLayout = useCallback(async (force = false) => {
+    if (!force) {
+      const cached = getHomeStorageCache<HomeSectionLayoutItem[]>(CACHE_KEY_SECTIONS_LAYOUT);
+      if (cached && cached.length > 0) {
+        setSectionsLayout(cached);
+        return;
+      }
+    }
     if (isFetchingSectionsLayoutRef.current) return;
     try {
       const defaultIds = ['hero_banner_1', 'sub_banner_1', 'occasions_1', 'bestsellers_1', 'custom_cards_1', 'promo_banner_1'];
@@ -1995,6 +2136,7 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           };
         });
         setSectionsLayout(items);
+        setHomeStorageCache(CACHE_KEY_SECTIONS_LAYOUT, items);
       }
     } catch (err: any) {
       console.warn('[HomeBanner] Fetch sections layout notice:', err?.message || err);
@@ -2343,42 +2485,56 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         bc.onmessage = (e) => {
           if (e.data?.type === 'BANNERS_UPDATED' && Array.isArray(e.data.banners)) {
             setBanners(e.data.banners);
+            setHomeStorageCache(CACHE_KEY_BANNERS, e.data.banners);
           }
           if (e.data?.type === 'BANNER_THEME_UPDATED' && typeof e.data.theme === 'string') {
             setActiveThemeState(e.data.theme);
+            setHomeStorageCache(CACHE_KEY_BANNER_THEME, e.data.theme);
           }
           if (e.data?.type === 'SUB_BANNERS_UPDATED' && Array.isArray(e.data.items)) {
-            setSubBanners(e.data.items.filter((b: any) => b.is_active));
+            const active = e.data.items.filter((b: any) => b.is_active);
+            setSubBanners(active);
             if (e.data.settings) {
               setSubBannerSettings(e.data.settings);
             }
+            setHomeStorageCache(CACHE_KEY_SUB_BANNERS, { items: active, settings: e.data.settings });
           }
           if (e.data?.type === 'OCCASIONS_UPDATED' && Array.isArray(e.data.items)) {
-            setOccasions(e.data.items.filter((b: any) => b.is_active));
+            const active = e.data.items.filter((b: any) => b.is_active);
+            setOccasions(active);
             if (e.data.settings) {
               setOccasionsSettings(e.data.settings);
             }
+            setHomeStorageCache(CACHE_KEY_OCCASIONS, { items: active, settings: e.data.settings });
           }
           if (e.data?.type === 'BESTSELLERS_UPDATED' && Array.isArray(e.data.items)) {
-            setBestsellers(e.data.items.filter((b: any) => b.is_active));
+            const active = e.data.items.filter((b: any) => b.is_active);
+            setBestsellers(active);
             if (e.data.settings) {
               setBestsellerSettings(e.data.settings);
             }
+            setHomeStorageCache(CACHE_KEY_BESTSELLERS, { items: active, settings: e.data.settings });
           }
           if (e.data?.type === 'PROMO_BANNER_UPDATED' && Array.isArray(e.data.items)) {
-            setPromoBanners(e.data.items.filter((b: any) => b.is_active));
+            const active = e.data.items.filter((b: any) => b.is_active);
+            setPromoBanners(active);
             if (e.data.settings) {
               setPromoBannerSettings(e.data.settings);
             }
+            setHomeStorageCache(CACHE_KEY_PROMO_BANNERS, { items: active, settings: e.data.settings });
           }
           if (e.data?.type === 'CUSTOM_CARDS_UPDATED' && Array.isArray(e.data.items)) {
-            setCustomCards(e.data.items.filter((c: any) => c.is_active));
+            const active = e.data.items.filter((c: any) => c.is_active);
+            setCustomCards(active);
             if (e.data.settings) {
               setCustomCardsSettings(e.data.settings);
             }
+            setHomeStorageCache(CACHE_KEY_CUSTOM_CARDS, { items: active, settings: e.data.settings });
           }
           if (e.data?.type === 'SECTIONS_LAYOUT_UPDATED' && Array.isArray(e.data.items)) {
-            setSectionsLayout(e.data.items.filter((s: any) => s.is_enabled !== false));
+            const active = e.data.items.filter((s: any) => s.is_enabled !== false);
+            setSectionsLayout(active);
+            setHomeStorageCache(CACHE_KEY_SECTIONS_LAYOUT, active);
           }
         };
       } catch (_) {}
@@ -2387,56 +2543,70 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const handleCustomUpdate = (e: any) => {
       if (e.detail && Array.isArray(e.detail)) {
         setBanners(e.detail);
+        setHomeStorageCache(CACHE_KEY_BANNERS, e.detail);
       }
     };
     const handleThemeUpdate = (e: any) => {
       if (e.detail && typeof e.detail === 'string') {
         setActiveThemeState(e.detail);
+        setHomeStorageCache(CACHE_KEY_BANNER_THEME, e.detail);
       }
     };
     const handleSubBannersUpdate = (e: any) => {
       if (e.detail?.items && Array.isArray(e.detail.items)) {
-        setSubBanners(e.detail.items.filter((b: any) => b.is_active));
-      }
-      if (e.detail?.settings) {
-        setSubBannerSettings(e.detail.settings);
+        const active = e.detail.items.filter((b: any) => b.is_active);
+        setSubBanners(active);
+        if (e.detail?.settings) {
+          setSubBannerSettings(e.detail.settings);
+        }
+        setHomeStorageCache(CACHE_KEY_SUB_BANNERS, { items: active, settings: e.detail?.settings });
       }
     };
     const handleOccasionsUpdate = (e: any) => {
       if (e.detail?.items && Array.isArray(e.detail.items)) {
-        setOccasions(e.detail.items.filter((b: any) => b.is_active));
-      }
-      if (e.detail?.settings) {
-        setOccasionsSettings(e.detail.settings);
+        const active = e.detail.items.filter((b: any) => b.is_active);
+        setOccasions(active);
+        if (e.detail?.settings) {
+          setOccasionsSettings(e.detail.settings);
+        }
+        setHomeStorageCache(CACHE_KEY_OCCASIONS, { items: active, settings: e.detail?.settings });
       }
     };
     const handleBestsellersUpdate = (e: any) => {
       if (e.detail?.items && Array.isArray(e.detail.items)) {
-        setBestsellers(e.detail.items.filter((b: any) => b.is_active));
-      }
-      if (e.detail?.settings) {
-        setBestsellerSettings(e.detail.settings);
+        const active = e.detail.items.filter((b: any) => b.is_active);
+        setBestsellers(active);
+        if (e.detail?.settings) {
+          setBestsellerSettings(e.detail.settings);
+        }
+        setHomeStorageCache(CACHE_KEY_BESTSELLERS, { items: active, settings: e.detail?.settings });
       }
     };
     const handlePromoBannersUpdate = (e: any) => {
       if (e.detail?.items && Array.isArray(e.detail.items)) {
-        setPromoBanners(e.detail.items.filter((b: any) => b.is_active));
-      }
-      if (e.detail?.settings) {
-        setPromoBannerSettings(e.detail.settings);
+        const active = e.detail.items.filter((b: any) => b.is_active);
+        setPromoBanners(active);
+        if (e.detail?.settings) {
+          setPromoBannerSettings(e.detail.settings);
+        }
+        setHomeStorageCache(CACHE_KEY_PROMO_BANNERS, { items: active, settings: e.detail?.settings });
       }
     };
     const handleCustomCardsUpdate = (e: any) => {
       if (e.detail?.items && Array.isArray(e.detail.items)) {
-        setCustomCards(e.detail.items.filter((c: any) => c.is_active));
-      }
-      if (e.detail?.settings) {
-        setCustomCardsSettings(e.detail.settings);
+        const active = e.detail.items.filter((c: any) => c.is_active);
+        setCustomCards(active);
+        if (e.detail?.settings) {
+          setCustomCardsSettings(e.detail.settings);
+        }
+        setHomeStorageCache(CACHE_KEY_CUSTOM_CARDS, { items: active, settings: e.detail?.settings });
       }
     };
     const handleSectionsLayoutUpdate = (e: any) => {
       if (e.detail?.items && Array.isArray(e.detail.items)) {
-        setSectionsLayout(e.detail.items.filter((s: any) => s.is_enabled !== false));
+        const active = e.detail.items.filter((s: any) => s.is_enabled !== false);
+        setSectionsLayout(active);
+        setHomeStorageCache(CACHE_KEY_SECTIONS_LAYOUT, active);
       }
     };
 
@@ -2462,29 +2632,34 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
   }, []);
 
-  // Initial load - guarded so StrictMode or multiple triggers never cause double requests
-  useEffect(() => {
-    if (hasInitializedRef.current) return;
-    hasInitializedRef.current = true;
+  // On-demand fetcher: Only called when Home page is mounted or explicitly requested
+  const fetchHomeDataOnDemand = useCallback(
+    async (force = false) => {
+      if (!force && hasInitializedRef.current) return;
+      hasInitializedRef.current = true;
 
-    fetchPublicBanners();
-    fetchBannerTheme();
-    fetchPublicSubBanners();
-    fetchPublicOccasions();
-    fetchPublicBestsellers();
-    fetchPublicPromoBanners();
-    fetchPublicCustomCards();
-    fetchPublicSectionsLayout();
-  }, [
-    fetchPublicBanners,
-    fetchBannerTheme,
-    fetchPublicSubBanners,
-    fetchPublicOccasions,
-    fetchPublicBestsellers,
-    fetchPublicPromoBanners,
-    fetchPublicCustomCards,
-    fetchPublicSectionsLayout,
-  ]);
+      await Promise.allSettled([
+        fetchPublicBanners(force),
+        fetchBannerTheme(force),
+        fetchPublicSubBanners(force),
+        fetchPublicOccasions(force),
+        fetchPublicBestsellers(force),
+        fetchPublicPromoBanners(force),
+        fetchPublicCustomCards(force),
+        fetchPublicSectionsLayout(force),
+      ]);
+    },
+    [
+      fetchPublicBanners,
+      fetchBannerTheme,
+      fetchPublicSubBanners,
+      fetchPublicOccasions,
+      fetchPublicBestsellers,
+      fetchPublicPromoBanners,
+      fetchPublicCustomCards,
+      fetchPublicSectionsLayout,
+    ]
+  );
 
   return (
     <HomeBannerContext.Provider
@@ -2497,6 +2672,8 @@ export const HomeBannerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         availableThemes: BANNER_THEMES,
         setActiveTheme,
         fetchPublicBanners,
+        fetchBannerTheme,
+        fetchHomeDataOnDemand,
         fetchAdminBanners,
         uploadBannerMedia,
         createBanner,

@@ -1,9 +1,10 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import { toast } from 'sonner';
-import type { AppDispatch, RootState } from '../redux/store';
+import type { AppDispatch } from '../redux/store';
 import { removeFromWishlist } from '../redux/slices/wishlistSlice';
+import { addToCart } from '../redux/slices/cartSlice';
 import type { ProductItem } from '../redux/slices/productSlice';
 
 interface WishlistCardProps {
@@ -19,8 +20,6 @@ export default function WishlistCard({ product }: WishlistCardProps) {
     product.images?.find((img) => img.is_primary)?.url ||
     product.images?.[0]?.url ||
     'https://images.unsplash.com/photo-1548036328-c9fa89d128fa?q=80&w=800';
-
-  const { isAuthenticated } = useSelector((state: RootState) => state.auth);
 
   const productUrl = (() => {
     const headerSlug = product.header_title
@@ -63,12 +62,55 @@ export default function WishlistCard({ product }: WishlistCardProps) {
 
   const handleMoveToCart = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!isAuthenticated) {
-      toast.error('Please login to move items to your cart');
-      navigate('/login', { state: { from: '/wishlist' } });
-      return;
-    }
-    toast.success(`"${product.title}" added to your Cart!`, { icon: '🛍️' });
+
+    const chosenColor =
+      product.colors && product.colors.length > 0
+        ? typeof product.colors[0] === 'string'
+          ? product.colors[0]
+          : product.colors[0].name
+        : null;
+
+    const chosenSize =
+      product.sizes && product.sizes.length > 0 ? product.sizes[0] : null;
+
+    // 1. Add item into Cart
+    dispatch(
+      addToCart({
+        product,
+        selectedColor: chosenColor,
+        selectedSize: chosenSize,
+        quantity: 1,
+      })
+    );
+
+    // 2. Remove item from Wishlist
+    dispatch(removeFromWishlist(product.id));
+
+    // 3. Custom brand CTA shopping bag icon
+    const cartToastIcon = (
+      <div className="w-6 h-6 rounded-full bg-[#FFF5EB] border border-[#FDE3CE] flex items-center justify-center shrink-0">
+        <svg
+          className="w-3.5 h-3.5 text-[#D26900] fill-none stroke-current"
+          viewBox="0 0 24 24"
+          strokeWidth={2.2}
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"
+          />
+        </svg>
+      </div>
+    );
+
+    // 4. Toast notification with View Cart action
+    toast.success(`"${product.title}" added to your Cart!`, {
+      icon: cartToastIcon,
+      action: {
+        label: 'View Cart',
+        onClick: () => navigate('/cart'),
+      },
+    });
   };
 
   const isOutOfStock =

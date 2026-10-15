@@ -51,10 +51,20 @@ const initialState: WishlistState = {
   error: null,
 };
 
+// Deduplication and throttle guards for fetchWishlist
+let isWishlistFetching = false;
+let lastWishlistFetchTime = 0;
+
 // Fetch user/guest wishlist
-export const fetchWishlist = createAsyncThunk(
+export const fetchWishlist = createAsyncThunk<
+  ProductItem[],
+  boolean | void,
+  { state: { wishlist: WishlistState } }
+>(
   'wishlist/fetchWishlist',
-  async () => {
+  async (_force) => {
+    isWishlistFetching = true;
+    lastWishlistFetchTime = Date.now();
     try {
       const guestId = getOrCreateGuestId();
       const res = await apiClient.get('/wishlist', {
@@ -66,7 +76,27 @@ export const fetchWishlist = createAsyncThunk(
     } catch (err: any) {
       // Fallback to local cache if network/offline
       return getCachedWishlist();
+    } finally {
+      isWishlistFetching = false;
     }
+  },
+  {
+    condition: (force, { getState }) => {
+      if (isWishlistFetching) {
+        return false; // Skip if a request is already in flight
+      }
+      if (!force) {
+        const state = getState();
+        if (state.wishlist.loading) {
+          return false;
+        }
+        // If fetched within last 30 seconds and already has items in memory, skip redundant call
+        if (Date.now() - lastWishlistFetchTime < 30000 && state.wishlist.items.length > 0) {
+          return false;
+        }
+      }
+      return true;
+    },
   }
 );
 

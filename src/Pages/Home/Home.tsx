@@ -12,7 +12,12 @@ import HomePromoBannerSection from '../../Components/HomePromoBannerSection';
 
 export default function Home() {
   const dispatch = useDispatch<AppDispatch>();
-  const { sectionsLayout } = useHomeBanner();
+  const { sectionsLayout, fetchHomeDataOnDemand } = useHomeBanner();
+
+  // On-demand load: only fetch home banners and layouts when user is actually on the Home page
+  useEffect(() => {
+    fetchHomeDataOnDemand();
+  }, [fetchHomeDataOnDemand]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

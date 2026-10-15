@@ -107,13 +107,11 @@ export const AccountProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const isFetchingProfile = useRef(false);
   const isFetchingAddresses = useRef(false);
 
-  // When user logs out or switches, clear local cache
+  // When user logs out or switches, clear local cache (keep guest addresses)
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated && !localStorage.getItem('accessToken')) {
       setProfile(null);
-      setAddresses([]);
       setCachedProfile(null);
-      setCachedAddresses([]);
     }
   }, [isAuthenticated]);
 
@@ -246,6 +244,27 @@ export const AccountProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // 4. Add Address: Only called when user saves address -> saves to DB + syncs to state & localStorage (No extra GET request!)
   const addAddress = async (addressData: Omit<UserAddress, 'id'>): Promise<boolean> => {
     setSaving(true);
+    const activeToken = localStorage.getItem('accessToken') || token;
+    if (!activeToken) {
+      const newAddr: UserAddress = {
+        ...addressData,
+        id: `addr_${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      setAddresses((prev) => {
+        let updatedList = prev;
+        if (newAddr.isDefault) {
+          updatedList = updatedList.map((a) => ({ ...a, isDefault: false }));
+        }
+        const next = [newAddr, ...updatedList];
+        setCachedAddresses(next);
+        return next;
+      });
+      setSaving(false);
+      toast.success('Address added successfully');
+      return true;
+    }
     try {
       const res = await authenticatedFetch(`${API_BASE_URL}/account/addresses`, {
         method: 'POST',
@@ -281,6 +300,20 @@ export const AccountProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // 5. Update Address: Only called when user saves edited address -> saves to DB + syncs state & localStorage (No extra GET request!)
   const updateAddress = async (id: string, addressData: Partial<UserAddress>): Promise<boolean> => {
     setSaving(true);
+    const activeToken = localStorage.getItem('accessToken') || token;
+    if (!activeToken) {
+      setAddresses((prev) => {
+        let list = prev.map((a) => (a.id === id ? { ...a, ...addressData, updatedAt: new Date().toISOString() } : a));
+        if (addressData.isDefault) {
+          list = list.map((a) => (a.id === id ? a : { ...a, isDefault: false }));
+        }
+        setCachedAddresses(list);
+        return list;
+      });
+      setSaving(false);
+      toast.success('Address updated successfully');
+      return true;
+    }
     try {
       const res = await authenticatedFetch(`${API_BASE_URL}/account/addresses/${id}`, {
         method: 'PUT',
@@ -314,6 +347,19 @@ export const AccountProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // 6. Delete Address: Only called when user removes address -> deletes from DB + syncs state & localStorage (No extra GET request!)
   const deleteAddress = async (id: string): Promise<boolean> => {
+    const activeToken = localStorage.getItem('accessToken') || token;
+    if (!activeToken) {
+      setAddresses((prev) => {
+        const filtered = prev.filter((a) => a.id !== id);
+        if (prev.find((a) => a.id === id)?.isDefault && filtered.length > 0) {
+          filtered[0].isDefault = true;
+        }
+        setCachedAddresses(filtered);
+        return filtered;
+      });
+      toast.success('Address removed');
+      return true;
+    }
     try {
       const res = await authenticatedFetch(`${API_BASE_URL}/account/addresses/${id}`, {
         method: 'DELETE',
@@ -342,6 +388,19 @@ export const AccountProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // 7. Set Default Address: Only called when user clicks make default -> updates DB + syncs state & localStorage
   const setDefaultAddress = async (id: string): Promise<boolean> => {
+    const activeToken = localStorage.getItem('accessToken') || token;
+    if (!activeToken) {
+      setAddresses((prev) => {
+        const next = prev.map((a) => ({
+          ...a,
+          isDefault: a.id === id,
+        }));
+        setCachedAddresses(next);
+        return next;
+      });
+      toast.success('Default address updated');
+      return true;
+    }
     try {
       const res = await authenticatedFetch(`${API_BASE_URL}/account/addresses/${id}/default`, {
         method: 'PUT',

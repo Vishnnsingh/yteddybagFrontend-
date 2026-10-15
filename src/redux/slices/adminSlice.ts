@@ -114,6 +114,13 @@ const adminSlice = createSlice({
       localStorage.removeItem('adminAccessToken');
       localStorage.removeItem('adminUser');
     });
+    builder.addCase(adminLogoutAPI.rejected, (state) => {
+      state.admin = null;
+      state.token = null;
+      state.isAuthenticated = false;
+      localStorage.removeItem('adminAccessToken');
+      localStorage.removeItem('adminUser');
+    });
 
     // Fetch Profile
     builder.addCase(fetchAdminProfile.fulfilled, (state, action) => {
